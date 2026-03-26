@@ -1,0 +1,22 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:www.youtube.com)",
+      "WebSearch",
+      "WebFetch(domain:videohighlight.com)",
+      "WebFetch(domain:lilys.ai)",
+      "WebFetch(domain:github.com)",
+      "Bash(claude mcp:*)",
+      "Bash(claude --version)",
+      "Bash(claude plugin:*)",
+      "Bash(claude plugins:*)",
+      "Bash(gh api:*)",
+      "Bash(mkdir -p \"C:/Users/emkataumre/.claude/commands\")",
+      "Bash(mkdir -p \"C:/Users/emkataumre/.claude/templates\")",
+      "Bash(mkdir -p \"M:/Personal Projects/Vertigo/docs\")",
+      "Bash(mkdir -p \"M:/Personal Projects/Vertigo/.claude\")",
+      "Bash(mv \"M:/Personal Projects/Vertigo/project_plan.md\" \"M:/Personal Projects/Vertigo/docs/project_plan.md\")",
+      "Bash(mv \"M:/Personal Projects/Vertigo/changelog.md\" \"M:/Personal Projects/Vertigo/docs/changelog.md\")"
+    ]
+  }
+}
