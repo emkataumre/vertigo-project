@@ -18,7 +18,7 @@ A mobile app that helps foreigners and new residents in Copenhagen identify whic
 - **Test (e2e):** `npx playwright test`
 
 ## Architecture
-See `docs/architecture.md` for full breakdown.
+See `architecture.md` in the `vertigo-comms` repo for full breakdown.
 
 Short version:
 ```
