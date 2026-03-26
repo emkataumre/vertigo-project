@@ -49,4 +49,3 @@ Phase 0 — Research (before any code)
 - Copenhagen bin categories locked down
 - Tech decisions confirmed
 - Research tasks split between Martin (Emil's co-developer) and Emil
-
