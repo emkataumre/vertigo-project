@@ -7,6 +7,10 @@
     "vercel": {
       "type": "http",
       "url": "https://mcp.vercel.com"
+    },
+    "supabase-personal": {
+      "command": "npx",
+      "args": ["-y", "@supabase/mcp-server-supabase@latest", "--access-token", "sbp_aa0fa99b3aeb72f55545495ca005309045303e69"]
     }
   }
 }
