@@ -1,4 +1,4 @@
-# Claude Code local session data
+# Local Claude Code tooling
 .claude/
 .mcp.json
 
@@ -14,7 +14,33 @@ node_modules/
 .expo/
 dist/
 web-build/
+expo-env.d.ts
+
+# Native
+.kotlin/
+*.orig.*
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+
+# Metro
+.metro-health-check*
+
+# Debug
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+
+# TypeScript
+*.tsbuildinfo
+
+# Generated native folders
+/app/ios
+/app/android
 
 # OS
 .DS_Store
 Thumbs.db
+*.pem
