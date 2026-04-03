@@ -1,14 +1,35 @@
 // Single source of truth for Copenhagen bin categories (Københavns Kommune).
-// Source: affald.kk.dk/affaldsordninger — retrieved 2026-03-30.
+// Source: affald.kk.dk/affaldsordninger. Verify bin categories, co-location rules, and collection seasons annually or after any KK communications about waste sorting rule changes.
 // Never hardcode category names or IDs elsewhere in the codebase — always import from here.
 
+export const BIN_IDS = [
+  "madaffald",
+  "plast",
+  "mad-og-drikkekartoner",
+  "papir",
+  "restaffald",
+  "metal",
+  "pap",
+  "glas",
+  "elektronik",
+  "farligt-affald",
+  "medicin",
+  "stort-indbo",
+  "haveaffald",
+  "batterier",
+  "tekstilaffald",
+  "indendoers-trae",
+] as const;
+
+export type BinId = (typeof BIN_IDS)[number];
+
 export type BinCategory = {
-  id: string;
+  id: BinId;
   nameEn: string;
   nameDa: string;
-  /** Hex color representing the physical bin / label */
+  /** Hex color used to represent this category in the UI. Loosely based on physical bin color where applicable. */
   color: string;
-  /** Ionicons icon name (https://ionic.io/ionicons) */
+  /** Icon token for the UI icon component. Intended for Ionicons — requires @expo/vector-icons to be installed. */
   icon: string;
   /** Free-text note, e.g. co-location rules */
   note?: string;
@@ -89,7 +110,7 @@ export const BINS: BinCategory[] = [
     nameDa: "Farligt affald",
     color: "#C62828", // red
     icon: "warning-outline",
-    note: "Apartment residents: miljøskab code 4444.",
+    note: "Apartment residents: miljøskab code 4444 (verify with your housing association — may vary).",
   },
   {
     id: "medicin",
@@ -132,7 +153,7 @@ export const BINS: BinCategory[] = [
     note: "Must be washed, dry, and bagged with a knot.",
   },
   {
-    id: "indendoers-traee",
+    id: "indendoers-trae",
     nameEn: "Indoor Wood",
     nameDa: "Indendørs træ",
     color: "#A1887F", // light brown
@@ -141,7 +162,14 @@ export const BINS: BinCategory[] = [
   },
 ];
 
+// Guard: catch duplicate ids at module load time (e.g. from copy-paste errors)
+const _seenIds = new Set<string>();
+for (const bin of BINS) {
+  if (_seenIds.has(bin.id)) throw new Error(`Duplicate BinCategory id: "${bin.id}"`);
+  _seenIds.add(bin.id);
+}
+
 /** Convenience map for O(1) lookup by id */
-export const BINS_BY_ID: Record<string, BinCategory> = Object.fromEntries(
+export const BINS_BY_ID: Record<string, BinCategory | undefined> = Object.fromEntries(
   BINS.map((bin) => [bin.id, bin])
 );
