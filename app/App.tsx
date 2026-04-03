@@ -101,7 +101,11 @@ export default function App() {
       setAppState("confirmation");
     } catch (error) {
       console.error("handleCapture failed:", error);
-      const isNetworkError = error instanceof TypeError && /network|fetch|internet/i.test(error.message);
+      const networkPattern = /network request failed|failed to send a request|failed to fetch/i;
+      const isNetworkError =
+        error instanceof Error &&
+        (networkPattern.test(error.message) ||
+          (error.cause instanceof Error && networkPattern.test(error.cause.message)));
       setErrorTitle(isNetworkError ? "No internet connection" : "Something went wrong");
       setAppState("error");
     } finally {

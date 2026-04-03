@@ -160,8 +160,10 @@ describe("App", () => {
     expect(screen.queryByText("Something went wrong")).toBeNull();
   });
 
-  it("network error path: TypeError with network message → shows 'No internet connection'", async () => {
-    mockCallIdentify.mockRejectedValue(new TypeError("Network request failed"));
+  it("network error path: Supabase fetch error → shows 'No internet connection'", async () => {
+    // Supabase wraps the underlying TypeError into its own error class —
+    // simulate that with a plain Error matching the Supabase message.
+    mockCallIdentify.mockRejectedValue(new Error("Failed to send a request to the Edge Function"));
     render(<App />);
 
     await act(async () => {
