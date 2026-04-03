@@ -5,20 +5,20 @@ AI-powered trash sorting app for Copenhagen. Photo → Vision LLM → correct bi
 ## Stack
 - React Native + Expo (iOS + Android)
 - TypeScript (strict)
-- Vercel serverless functions (Node.js/TypeScript)
+- Supabase Edge Functions (Deno/TypeScript)
 - Supabase (PostgreSQL + Storage)
 - Vision LLM (Claude or GPT-4V)
 
 ## Dev commands
 - `npx expo start` — start Expo dev server
-- `vercel dev` — start Vercel API locally
+- `supabase functions serve` — run Edge Functions locally
 - `eas build` — production build
 - `npm test` — run tests
 
 ## Constraints
 - TypeScript only — no plain JS
 - Never commit directly to main — always use feature branches + PRs
-- `bins.ts` is the single source of truth for bin categories — never hardcode them elsewhere
+- `app/constants/bins.ts` is the single source of truth for bin categories — never hardcode them elsewhere
 - LLM prompt must return structured JSON — no free-form responses
 - Correction data must always be saved — it is the future ML training set
 
