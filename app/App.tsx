@@ -42,7 +42,7 @@ export default function App() {
   const [appState, setAppState] = useState<AppState>("camera");
   const [scanResult, setScanResult] = useState<ScanResult | null>(null);
   const cameraRef = useRef<CameraView>(null);
-  const scanTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
+  const scanTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   useEffect(() => {
     if (!permission?.granted) {
@@ -83,9 +83,9 @@ export default function App() {
             bin: "madaffald" as BinId,
             reason: "Used coffee filters are organic waste and go in the green bio bag.",
             alternatives: [
-              { item: "Coffee bag (plastic)", bin: "restaffald" },
-              { item: "Coffee capsule (aluminium)", bin: "metal" },
-              { item: "Paper cup", bin: "papir" },
+              { item: "Coffee bag (plastic)", bin: "restaffald" as BinId },
+              { item: "Coffee capsule (aluminium)", bin: "metal" as BinId },
+              { item: "Paper cup", bin: "papir" as BinId },
             ],
           };
           setScanResult(result);
@@ -96,7 +96,7 @@ export default function App() {
           // above and replace it with a real HTTP call. Pass the returned IdentifyResponse
           // directly to saveScan. Keep in mind that IdentifyResponse has no `item` or
           // `alternatives` fields — those will need to be sourced separately (see TODO above).
-          void saveScan(photo.uri, {
+          void saveScan(photo.uri, photo.base64 ?? "", {
             bin_id: result.bin,
             reason_en: result.reason,
             reason_da: result.reason,
