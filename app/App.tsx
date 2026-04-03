@@ -1,6 +1,5 @@
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { StyleSheet, Text, View, Image, Pressable, Alert, Linking } from "react-native";
-import { BlurView } from "expo-blur";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import { StatusBar } from "expo-status-bar";
 import ScanningOverlay from "./components/ScanningOverlay";
@@ -182,9 +181,8 @@ export default function App() {
         pointerEvents={appState === "camera" ? "none" : "auto"}
       >
         {capturedPhotoUri && (
-          <Image source={{ uri: capturedPhotoUri }} style={styles.blurImage} />
+          <Image source={{ uri: capturedPhotoUri }} style={styles.blurImage} blurRadius={20} />
         )}
-        <BlurView intensity={80} tint="dark" style={styles.blurFill} />
       </View>
 
       <ScreenLayer visible={appState === "scanning"}>
@@ -256,9 +254,6 @@ const styles = StyleSheet.create({
     width: undefined,
     height: undefined,
     resizeMode: "cover",
-  },
-  blurFill: {
-    ...StyleSheet.absoluteFillObject,
   },
   screenLayer: {
     ...StyleSheet.absoluteFillObject,
