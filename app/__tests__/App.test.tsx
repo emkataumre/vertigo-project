@@ -141,7 +141,7 @@ describe("App", () => {
   });
 
   it("error path: callIdentify throws → error overlay → try again", async () => {
-    mockCallIdentify.mockRejectedValue(new Error("Network error"));
+    mockCallIdentify.mockRejectedValue(new Error("Something failed"));
     render(<App />);
 
     await act(async () => {
@@ -158,6 +158,25 @@ describe("App", () => {
       fireEvent.press(screen.getByText("Try Again"));
     });
     expect(screen.queryByText("Something went wrong")).toBeNull();
+  });
+
+  it("network error path: TypeError with network message → shows 'No internet connection'", async () => {
+    mockCallIdentify.mockRejectedValue(new TypeError("Network request failed"));
+    render(<App />);
+
+    await act(async () => {
+      fireEvent.press(screen.getByTestId("capture-button"));
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("No internet connection")).toBeTruthy();
+    });
+    expect(mockSaveScan).not.toHaveBeenCalled();
+
+    await act(async () => {
+      fireEvent.press(screen.getByText("Try Again"));
+    });
+    expect(screen.queryByText("No internet connection")).toBeNull();
   });
 
   it("deny path: confirmation → correction screen with alternatives", async () => {

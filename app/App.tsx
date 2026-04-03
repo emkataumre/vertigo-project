@@ -46,6 +46,7 @@ export default function App() {
   const [permission, requestPermission] = useCameraPermissions();
   const [capturing, setCapturing] = useState(false);
   const [appState, setAppState] = useState<AppState>("camera");
+  const [errorTitle, setErrorTitle] = useState<string>("Something went wrong");
   const [scanResult, setScanResult] = useState<ScanResult | null>(null);
   const [capturedPhotoUri, setCapturedPhotoUri] = useState<string | null>(null);
   const cameraRef = useRef<CameraView>(null);
@@ -100,6 +101,8 @@ export default function App() {
       setAppState("confirmation");
     } catch (error) {
       console.error("handleCapture failed:", error);
+      const isNetworkError = error instanceof TypeError && /network|fetch|internet/i.test(error.message);
+      setErrorTitle(isNetworkError ? "No internet connection" : "Something went wrong");
       setAppState("error");
     } finally {
       setCapturing(false);
@@ -155,6 +158,7 @@ export default function App() {
     setAppState("camera");
     setScanResult(null);
     setCapturedPhotoUri(null);
+    setErrorTitle("Something went wrong");
   };
 
   if (!permission) {
@@ -237,7 +241,7 @@ export default function App() {
       </ScreenLayer>
 
       <ScreenLayer visible={appState === "error"}>
-        <ErrorOverlay onRetry={resetToCamera} />
+        <ErrorOverlay onRetry={resetToCamera} title={errorTitle} />
       </ScreenLayer>
 
       <ScreenLayer visible={appState === "unidentifiable"}>
