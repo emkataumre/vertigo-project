@@ -9,6 +9,10 @@ import { saveCorrection } from "../lib/saveCorrection";
 jest.mock("../lib/callIdentify");
 jest.mock("../lib/saveScan");
 jest.mock("../lib/saveCorrection");
+jest.mock("../lib/compressImage", () => ({
+  compressForIdentify: jest.fn().mockResolvedValue(null),
+  compressForStorage: jest.fn().mockResolvedValue(null),
+}));
 
 const mockCallIdentify = callIdentify as jest.Mock;
 const mockSaveScan = saveScan as jest.Mock;
