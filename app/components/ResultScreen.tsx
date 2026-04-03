@@ -21,7 +21,7 @@ export default function ResultScreen({
   return (
     <View style={styles.container}>
       <View style={styles.content}>
-        <View style={[styles.binBadge, { backgroundColor: binColor }]}>
+        <View style={[styles.binBadge, { backgroundColor: binColor }]} testID="bin-badge">
           <Text style={styles.binName}>{binName}</Text>
         </View>
         <Text style={styles.item}>{item}</Text>

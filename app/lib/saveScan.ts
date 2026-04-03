@@ -34,7 +34,8 @@ export async function saveScan(
       bin_id: result.bin_id,
       reason_en: result.reason_en,
       reason_da: result.reason_da,
-      alternative_bin_id: result.alternative_bin_id,
+      alternative_bin_id: result.alternatives[0]?.bin_id ?? null,
+      alternatives: result.alternatives,
     });
 
     if (insertError) {

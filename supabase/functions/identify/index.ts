@@ -1,5 +1,5 @@
 // Deno runtime — do NOT use Node.js imports.
-import OpenAI from "jsr:@openai/openai";
+import OpenAI from "@openai/openai";
 
 // ─── Copenhagen taxonomy ───────────────────────────────────────────────────────
 // Duplicated from app/constants/bins.ts — Edge Functions cannot import from the app layer.
@@ -47,10 +47,11 @@ type BinId =
 // ─── Response shape ────────────────────────────────────────────────────────────
 // Must stay structurally identical to IdentifyResponse in app/types/identify.ts.
 interface IdentifyResponse {
+  item: string;
   bin_id: BinId | null;
   reason_en: string;
   reason_da: string;
-  alternative_bin_id: BinId | null;
+  alternatives: { item: string; bin_id: BinId }[];
 }
 
 // ─── System prompt ─────────────────────────────────────────────────────────────
@@ -88,17 +89,19 @@ SORTING RULES (Copenhagen-specific):
 - If nothing can be identified in the image (blurry, dark, no item visible), set bin_id to null.
 
 RESPONSE FORMAT:
-Respond with a single JSON object — no markdown, no prose, no code fences. Exactly these four keys:
+Respond with a single JSON object — no markdown, no prose, no code fences. Exactly these five keys:
 {
+  "item": "<short common name of the item visible in the photo, in English>",
   "bin_id": "<one of the ${VALID_BIN_IDS.size} IDs above, or null if unidentifiable>",
   "reason_en": "<1–2 sentence explanation in English of why this bin was chosen>",
   "reason_da": "<same explanation in Danish>",
-  "alternative_bin_id": "<a second valid ID only if this is a genuine close call, otherwise null>"
+  "alternatives": [{ "item": "<alternative item name>", "bin_id": "<valid bin ID>" }]
 }
 
 CONSTRAINTS:
+- item MUST be a short, common English name for the item (e.g. "Coffee filter", "Plastic bottle"). If the image is unidentifiable, use "Unknown item".
 - bin_id MUST be one of the ${VALID_BIN_IDS.size} IDs listed above, or null. Any other value is a hard error.
-- alternative_bin_id MUST be one of the ${VALID_BIN_IDS.size} IDs listed above, or null. Only set it when there is meaningful ambiguity. Do not set it for routine classifications.
+- alternatives MUST be an array of 0–3 objects, each with an "item" (string) and "bin_id" (one of the ${VALID_BIN_IDS.size} IDs). Only include alternatives when there is genuine ambiguity about what the item is. Use an empty array [] for clear-cut classifications.
 - reason_en and reason_da must both always be present and non-empty strings.
 - Do not hallucinate bin IDs. Do not invent categories not in the list above.
 `.trim();
@@ -110,6 +113,7 @@ const BIN_ID_ENUM = [...VALID_BIN_IDS];
 const RESPONSE_JSON_SCHEMA = {
   type: "object",
   properties: {
+    item: { type: "string" },
     bin_id: {
       anyOf: [
         { type: "string", enum: BIN_ID_ENUM },
@@ -118,16 +122,29 @@ const RESPONSE_JSON_SCHEMA = {
     },
     reason_en: { type: "string" },
     reason_da: { type: "string" },
-    alternative_bin_id: {
-      anyOf: [
-        { type: "string", enum: BIN_ID_ENUM },
-        { type: "null" },
-      ],
+    alternatives: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          item: { type: "string" },
+          bin_id: { type: "string", enum: BIN_ID_ENUM },
+        },
+        required: ["item", "bin_id"],
+        additionalProperties: false,
+      },
     },
   },
-  required: ["bin_id", "reason_en", "reason_da", "alternative_bin_id"],
+  required: ["item", "bin_id", "reason_en", "reason_da", "alternatives"],
   additionalProperties: false,
 };
+
+// ─── OpenAI client ────────────────────────────────────────────────────────────
+// Constructed at module scope so it is built once on cold start, not per request.
+// Guarded by import.meta.main so test imports don't require env access.
+const openai = import.meta.main
+  ? new OpenAI({ apiKey: Deno.env.get("OPENAI_API_KEY") ?? "" })
+  : (null as unknown as OpenAI);
 
 // ─── Rate limiting ─────────────────────────────────────────────────────────────
 // In-memory sliding window rate limiter — see RATE_LIMIT_MAX and RATE_LIMIT_WINDOW_MS below.
@@ -183,6 +200,9 @@ function assertIdentifyResponse(raw: unknown): IdentifyResponse {
   }
   const r = raw as Record<string, unknown>;
 
+  if (typeof r.item !== "string" || r.item.trim() === "") {
+    throw new Error("item is missing or empty");
+  }
   if (!isValidBinIdOrNull(r.bin_id)) {
     throw new Error(`Invalid bin_id from model: ${JSON.stringify(r.bin_id)}`);
   }
@@ -192,22 +212,35 @@ function assertIdentifyResponse(raw: unknown): IdentifyResponse {
   if (typeof r.reason_da !== "string" || r.reason_da.trim() === "") {
     throw new Error("reason_da is missing or empty");
   }
-  if (!isValidBinIdOrNull(r.alternative_bin_id)) {
-    throw new Error(
-      `Invalid alternative_bin_id from model: ${JSON.stringify(r.alternative_bin_id)}`
-    );
+  if (!Array.isArray(r.alternatives)) {
+    throw new Error("alternatives is missing or not an array");
+  }
+  const alternatives: { item: string; bin_id: BinId }[] = [];
+  for (const alt of r.alternatives) {
+    if (typeof alt !== "object" || alt === null) {
+      throw new Error("alternatives entry is not an object");
+    }
+    const a = alt as Record<string, unknown>;
+    if (typeof a.item !== "string" || a.item.trim() === "") {
+      throw new Error("alternatives entry has missing or empty item");
+    }
+    if (typeof a.bin_id !== "string" || !VALID_BIN_IDS.has(a.bin_id)) {
+      throw new Error(`Invalid bin_id in alternatives: ${JSON.stringify(a.bin_id)}`);
+    }
+    alternatives.push({ item: a.item, bin_id: a.bin_id as BinId });
   }
 
   return {
+    item: r.item,
     bin_id: r.bin_id as BinId | null,
     reason_en: r.reason_en,
     reason_da: r.reason_da,
-    alternative_bin_id: r.alternative_bin_id as BinId | null,
+    alternatives,
   };
 }
 
 // ─── Entry point ───────────────────────────────────────────────────────────────
-Deno.serve(async (req: Request): Promise<Response> => {
+if (import.meta.main) Deno.serve(async (req: Request): Promise<Response> => {
   if (req.method === "OPTIONS") {
     return new Response(null, { status: 204, headers: CORS_HEADERS });
   }
@@ -222,7 +255,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
   // ── Rate limiting ───────────────────────────────────────────────────────────
   const forwarded = req.headers.get("x-forwarded-for");
   const clientIp = forwarded
-    ? forwarded.split(",").map(s => s.trim()).filter(Boolean).at(-1) ?? "unknown"
+    ? forwarded.split(",").map(s => s.trim()).filter(Boolean).at(0) ?? "unknown"
     : "unknown";
   if (isRateLimited(clientIp)) {
     return new Response(
@@ -285,8 +318,6 @@ Deno.serve(async (req: Request): Promise<Response> => {
       headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
     });
   }
-
-  const openai = new OpenAI({ apiKey });
 
   // ── OpenAI API call ─────────────────────────────────────────────────────────
   let completion: Awaited<ReturnType<typeof openai.chat.completions.create>>;
@@ -440,3 +471,6 @@ Deno.serve(async (req: Request): Promise<Response> => {
     headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
   });
 });
+
+// ─── Exports for testing ───────────────────────────────────────────────────────
+export { assertIdentifyResponse, isRateLimited, isValidBinIdOrNull, VALID_BIN_IDS, rateLimitMap };
