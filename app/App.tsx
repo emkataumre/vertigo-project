@@ -2,10 +2,12 @@ import { useEffect, useRef, useState } from "react";
 import { StyleSheet, Text, View, Pressable, Alert } from "react-native";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import { StatusBar } from "expo-status-bar";
+import ScanningOverlay from "./components/ScanningOverlay";
 
 export default function App() {
   const [permission, requestPermission] = useCameraPermissions();
   const [capturing, setCapturing] = useState(false);
+  const [scanning, setScanning] = useState(false);
   const cameraRef = useRef<CameraView>(null);
 
   useEffect(() => {
@@ -20,8 +22,12 @@ export default function App() {
     try {
       const photo = await cameraRef.current.takePictureAsync({ base64: true });
       if (photo) {
+        setScanning(true);
+        // TODO: send to identify endpoint — for now simulate with timeout
         console.log("Photo captured:", photo.uri);
-        // TODO: send to identify endpoint
+        setTimeout(() => {
+          setScanning(false);
+        }, 2000);
       }
     } catch {
       Alert.alert("Error", "Failed to capture photo. Please try again.");
@@ -45,16 +51,19 @@ export default function App() {
   return (
     <View style={styles.container}>
       <CameraView style={styles.camera} ref={cameraRef} facing="back" />
-      <View style={styles.buttonContainer}>
-        <Pressable
-          style={({ pressed }) => [
-            styles.captureButton,
-            pressed && styles.captureButtonPressed,
-          ]}
-          onPress={handleCapture}
-          disabled={capturing}
-        />
-      </View>
+      {scanning && <ScanningOverlay />}
+      {!scanning && (
+        <View style={styles.buttonContainer}>
+          <Pressable
+            style={({ pressed }) => [
+              styles.captureButton,
+              pressed && styles.captureButtonPressed,
+            ]}
+            onPress={handleCapture}
+            disabled={capturing}
+          />
+        </View>
+      )}
       <StatusBar style="light" />
     </View>
   );
