@@ -2,8 +2,11 @@
 import OpenAI from "jsr:@openai/openai";
 
 // ─── Copenhagen taxonomy ───────────────────────────────────────────────────────
-// Duplicated from app/constants/bins.ts — Edge Functions cannot import from the
-// app layer. Keep in sync with app/constants/bins.ts manually whenever bin IDs change.
+// Duplicated from app/constants/bins.ts — Edge Functions cannot import from the app layer.
+// When bin IDs change in bins.ts, update ALL THREE of the following:
+//   (1) VALID_BIN_IDS set below
+//   (2) BinId union type below
+//   (3) the VALID BIN IDs list in SYSTEM_PROMPT
 const VALID_BIN_IDS = new Set([
   "madaffald",
   "plast",
@@ -54,7 +57,7 @@ interface IdentifyResponse {
 const SYSTEM_PROMPT = `
 You are a waste sorting assistant for Copenhagen (Københavns Kommune), Denmark.
 
-Your only job is to classify the waste item visible in the provided photo into exactly one of the following 16 bin categories defined by Københavns Kommune.
+Your only job is to classify the waste item visible in the provided photo into exactly one of the following ${VALID_BIN_IDS.size} bin categories defined by Københavns Kommune.
 
 VALID BIN IDs (use these exact strings — no others are permitted):
 - madaffald        (Food Waste)
@@ -87,20 +90,21 @@ SORTING RULES (Copenhagen-specific):
 RESPONSE FORMAT:
 Respond with a single JSON object — no markdown, no prose, no code fences. Exactly these four keys:
 {
-  "bin_id": "<one of the 16 IDs above, or null if unidentifiable>",
+  "bin_id": "<one of the ${VALID_BIN_IDS.size} IDs above, or null if unidentifiable>",
   "reason_en": "<1–2 sentence explanation in English of why this bin was chosen>",
   "reason_da": "<same explanation in Danish>",
   "alternative_bin_id": "<a second valid ID only if this is a genuine close call, otherwise null>"
 }
 
 CONSTRAINTS:
-- bin_id MUST be one of the 16 IDs listed above, or null. Any other value is a hard error.
-- alternative_bin_id MUST be one of the 16 IDs listed above, or null. Only set it when there is meaningful ambiguity. Do not set it for routine classifications.
+- bin_id MUST be one of the ${VALID_BIN_IDS.size} IDs listed above, or null. Any other value is a hard error.
+- alternative_bin_id MUST be one of the ${VALID_BIN_IDS.size} IDs listed above, or null. Only set it when there is meaningful ambiguity. Do not set it for routine classifications.
 - reason_en and reason_da must both always be present and non-empty strings.
 - Do not hallucinate bin IDs. Do not invent categories not in the list above.
 `.trim();
 
 // ─── JSON Schema for structured output ────────────────────────────────────────
+// JSON Schema requires an array for enum — spread Set to avoid duplicating the source data.
 const BIN_ID_ENUM = [...VALID_BIN_IDS];
 
 const RESPONSE_JSON_SCHEMA = {
@@ -126,10 +130,9 @@ const RESPONSE_JSON_SCHEMA = {
 };
 
 // ─── Rate limiting ─────────────────────────────────────────────────────────────
-// In-memory sliding window: 10 requests per IP per 60 seconds.
-// NOTE: This map resets on every cold start and is not coordinated across
-// multiple Edge Function instances. Acceptable for now — revisit if abuse
-// becomes a problem.
+// In-memory sliding window rate limiter — see RATE_LIMIT_MAX and RATE_LIMIT_WINDOW_MS below.
+// NOTE: resets on cold start and is not coordinated across multiple Edge Function instances.
+// Acceptable for now — revisit if abuse becomes a problem.
 const rateLimitMap = new Map<string, number[]>();
 const RATE_LIMIT_MAX = 10;
 const RATE_LIMIT_WINDOW_MS = 60_000;
@@ -217,7 +220,10 @@ Deno.serve(async (req: Request): Promise<Response> => {
   }
 
   // ── Rate limiting ───────────────────────────────────────────────────────────
-  const clientIp = req.headers.get("x-forwarded-for") ?? "unknown";
+  const forwarded = req.headers.get("x-forwarded-for");
+  const clientIp = forwarded
+    ? forwarded.split(",").map(s => s.trim()).filter(Boolean).at(-1) ?? "unknown"
+    : "unknown";
   if (isRateLimited(clientIp)) {
     return new Response(
       JSON.stringify({ error: "Too many requests — please wait before trying again" }),
@@ -229,35 +235,52 @@ Deno.serve(async (req: Request): Promise<Response> => {
   }
 
   // ── Parse request body ──────────────────────────────────────────────────────
-  let imageBase64: string;
+  let body: { image_base64?: unknown };
   try {
-    const body = await req.json() as { image_base64?: unknown };
-    if (typeof body.image_base64 !== "string" || body.image_base64.trim() === "") {
-      throw new Error("Missing or empty image_base64 field");
-    }
-    // ~5 KB minimum decoded size (5120 bytes × 4/3 ≈ 6828 base64 chars).
-    // Rejects degenerate blobs that the model cannot meaningfully classify.
-    if (body.image_base64.length < 6828) {
-      throw new Error("Image is too small to classify — please send a real photo");
-    }
-    // ~15 MB maximum decoded size (15_000_000 bytes × 4/3 ≈ 20_000_000 base64 chars).
-    // Rejects oversized payloads that would waste bandwidth and model tokens.
-    if (body.image_base64.length > 20_000_000) {
-      throw new Error("Image is too large — please send a photo under 15 MB");
-    }
-    imageBase64 = body.image_base64;
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "Invalid request body";
-    return new Response(JSON.stringify({ error: message }), {
+    body = await req.json() as { image_base64?: unknown };
+  } catch {
+    return new Response(JSON.stringify({ error: "Request body must be valid JSON" }), {
       status: 400,
       headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
     });
   }
 
+  if (typeof body.image_base64 !== "string" || body.image_base64.trim() === "") {
+    return new Response(JSON.stringify({ error: "Missing or empty image_base64 field" }), {
+      status: 400,
+      headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
+    });
+  }
+  // ~5 KB minimum decoded size (5120 bytes × 4/3 ≈ 6828 base64 chars).
+  // Rejects degenerate blobs that the model cannot meaningfully classify.
+  if (body.image_base64.length < 6828) {
+    return new Response(
+      JSON.stringify({ error: "Image is too small to classify — please send a real photo" }),
+      {
+        status: 400,
+        headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
+      }
+    );
+  }
+  // ~15 MB maximum decoded size (15_000_000 bytes × 4/3 ≈ 20_000_000 base64 chars).
+  // Rejects oversized payloads that would waste bandwidth and model tokens.
+  if (body.image_base64.length > 20_000_000) {
+    return new Response(
+      JSON.stringify({ error: "Image is too large — please send a photo under 15 MB" }),
+      {
+        status: 400,
+        headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
+      }
+    );
+  }
+
+  const imageBase64 = body.image_base64;
+
   // ── Call OpenAI ─────────────────────────────────────────────────────────────
   const apiKey = Deno.env.get("OPENAI_API_KEY");
   if (!apiKey) {
-    return new Response(JSON.stringify({ error: "OPENAI_API_KEY not configured" }), {
+    console.error("[identify] CRITICAL: OPENAI_API_KEY environment variable is not set — all requests will fail");
+    return new Response(JSON.stringify({ error: "Service configuration error" }), {
       status: 500,
       headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
     });
@@ -265,9 +288,10 @@ Deno.serve(async (req: Request): Promise<Response> => {
 
   const openai = new OpenAI({ apiKey });
 
-  let result: IdentifyResponse;
+  // ── OpenAI API call ─────────────────────────────────────────────────────────
+  let completion: Awaited<ReturnType<typeof openai.chat.completions.create>>;
   try {
-    const completion = await openai.chat.completions.create({
+    completion = await openai.chat.completions.create({
       model: "gpt-4o-mini",
       max_tokens: 300,
       response_format: {
@@ -289,6 +313,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
             {
               type: "image_url",
               image_url: {
+                // Only JPEG is accepted — the app captures in JPEG format via expo-camera.
                 url: `data:image/jpeg;base64,${imageBase64}`,
                 detail: "low",
               },
@@ -301,20 +326,113 @@ Deno.serve(async (req: Request): Promise<Response> => {
         },
       ],
     });
-
-    const rawContent = completion.choices[0]?.message?.content;
-    if (!rawContent) {
-      throw new Error("Empty response from model");
-    }
-
-    result = assertIdentifyResponse(JSON.parse(rawContent));
   } catch (err) {
-    const detail = err instanceof Error ? err.message : String(err);
-    console.error("[identify] OpenAI error:", detail);
-    return new Response(JSON.stringify({ error: "Classification failed" }), {
-      status: 502,
-      headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
-    });
+    if (err instanceof OpenAI.APIError) {
+      console.error(
+        `[identify] OpenAI API error: status=${err.status} code=${err.code} message=${err.message}`
+      );
+      if (err.status === 429) {
+        return new Response(
+          JSON.stringify({ error: "Classification failed — upstream rate limit" }),
+          {
+            status: 429,
+            headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
+          }
+        );
+      }
+      return new Response(
+        JSON.stringify({ error: "Classification failed — upstream API error" }),
+        {
+          status: 502,
+          headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
+        }
+      );
+    }
+    console.error("[identify] Unexpected error calling OpenAI:", err);
+    return new Response(
+      JSON.stringify({ error: "Classification failed — unexpected error" }),
+      {
+        status: 502,
+        headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
+      }
+    );
+  }
+
+  // ── Validate completion shape ────────────────────────────────────────────────
+  if (completion.choices.length === 0) {
+    console.error("[identify] OpenAI returned an empty choices array");
+    return new Response(
+      JSON.stringify({ error: "Classification failed — no response from model" }),
+      {
+        status: 502,
+        headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
+      }
+    );
+  }
+
+  const choice = completion.choices[0];
+  if (choice.message.content === null) {
+    console.error(
+      `[identify] Model returned null content; finish_reason=${choice.finish_reason}`
+    );
+    return new Response(
+      JSON.stringify({ error: "Classification failed — model returned no content" }),
+      {
+        status: 502,
+        headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
+      }
+    );
+  }
+
+  const rawContent = choice.message.content;
+  if (rawContent === "") {
+    console.error(
+      `[identify] Model returned empty string content; finish_reason=${choice.finish_reason}`
+    );
+    return new Response(
+      JSON.stringify({ error: "Classification failed — model returned empty content" }),
+      {
+        status: 502,
+        headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
+      }
+    );
+  }
+
+  // ── Parse JSON ───────────────────────────────────────────────────────────────
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(rawContent);
+  } catch (err) {
+    if (err instanceof SyntaxError) {
+      console.error("[identify] Failed to parse model response as JSON; rawContent:", rawContent);
+      return new Response(
+        JSON.stringify({ error: "Classification failed — malformed model response" }),
+        {
+          status: 502,
+          headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
+        }
+      );
+    }
+    throw err;
+  }
+
+  // ── Validate response shape ──────────────────────────────────────────────────
+  let result: IdentifyResponse;
+  try {
+    result = assertIdentifyResponse(parsed);
+  } catch (err) {
+    const validationMessage = err instanceof Error ? err.message : String(err);
+    console.error(
+      `[identify] Model response failed validation: ${validationMessage}; rawContent:`,
+      rawContent
+    );
+    return new Response(
+      JSON.stringify({ error: "Classification failed — unexpected model output" }),
+      {
+        status: 502,
+        headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
+      }
+    );
   }
 
   return new Response(JSON.stringify(result), {
