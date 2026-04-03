@@ -5,15 +5,22 @@ import { StatusBar } from "expo-status-bar";
 import ScanningOverlay from "./components/ScanningOverlay";
 import ConfirmationScreen from "./components/ConfirmationScreen";
 import ResultScreen from "./components/ResultScreen";
+import CorrectionScreen from "./components/CorrectionScreen";
 import type { BinId } from "./constants/bins";
 
-type AppState = "camera" | "scanning" | "confirmation" | "result";
+type AppState = "camera" | "scanning" | "confirmation" | "result" | "correction";
+
+interface Alternative {
+  item: string;
+  bin: BinId;
+}
 
 interface ScanResult {
   photoUri: string;
   item: string;
   bin: BinId;
   reason: string;
+  alternatives: Alternative[];
 }
 
 export default function App() {
@@ -44,6 +51,11 @@ export default function App() {
             item: "Coffee filter",
             bin: "madaffald",
             reason: "Used coffee filters are organic waste and go in the green bio bag.",
+            alternatives: [
+              { item: "Coffee bag (plastic)", bin: "restaffald" },
+              { item: "Coffee capsule (aluminium)", bin: "metal" },
+              { item: "Paper cup", bin: "papir" },
+            ],
           });
           setAppState("confirmation");
         }, 2000);
@@ -60,8 +72,12 @@ export default function App() {
   };
 
   const handleDeny = () => {
-    // TODO: navigate to correction flow
-    console.log("Denied:", scanResult?.item);
+    setAppState("correction");
+  };
+
+  const handleCorrection = (corrected: string) => {
+    // TODO: call /correct endpoint and upload photo
+    console.log("Correction:", { predicted: scanResult?.item, corrected });
     resetToCamera();
   };
 
@@ -92,6 +108,13 @@ export default function App() {
           itemName={scanResult.item}
           onConfirm={handleConfirm}
           onDeny={handleDeny}
+        />
+      )}
+      {appState === "correction" && scanResult && (
+        <CorrectionScreen
+          alternatives={scanResult.alternatives}
+          onSelect={handleCorrection}
+          onCancel={resetToCamera}
         />
       )}
       {appState === "result" && scanResult && (
