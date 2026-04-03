@@ -40,6 +40,9 @@ yarn-error.*
 /app/ios
 /app/android
 
+# Supabase
+supabase/.temp/
+
 # OS
 .DS_Store
 Thumbs.db
