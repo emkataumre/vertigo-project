@@ -19,7 +19,7 @@ export interface Alternative {
 
 interface CorrectionScreenProps {
   alternatives: Alternative[];
-  onSelect: (corrected: string) => void;
+  onSelect: (item: string, bin: BinId | null) => void;
   onCancel: () => void;
 }
 
@@ -34,7 +34,7 @@ export default function CorrectionScreen({
     const trimmed = otherText.trim();
     if (trimmed) {
       Keyboard.dismiss();
-      onSelect(trimmed);
+      onSelect(trimmed, null);
     }
   };
 
@@ -58,7 +58,7 @@ export default function CorrectionScreen({
                 styles.altButton,
                 pressed && styles.altButtonPressed,
               ]}
-              onPress={() => onSelect(alt.item)}
+              onPress={() => onSelect(alt.item, alt.bin)}
             >
               <Text style={styles.altText}>{alt.item}</Text>
             </Pressable>

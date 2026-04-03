@@ -47,6 +47,11 @@ export default function App() {
     if (!permission?.granted) {
       requestPermission().catch((error) => {
         console.error("Camera permission request failed:", error);
+        Alert.alert(
+          "Permission error",
+          "Could not request camera access. Please restart the app or enable it in Settings.",
+          [{ text: "Open Settings", onPress: () => Linking.openSettings().catch(() => {}) }]
+        );
       });
     }
   }, [permission, requestPermission]);
@@ -86,6 +91,7 @@ export default function App() {
     } catch (error) {
       console.error("handleCapture failed:", error);
       Alert.alert("Capture failed", "Something went wrong. Please try again.");
+      resetToCamera();
     } finally {
       setCapturing(false);
     }
@@ -99,13 +105,19 @@ export default function App() {
     setAppState("correction");
   };
 
-  const handleCorrection = (corrected: string) => {
+  const handleCorrection = (item: string, bin: BinId | null) => {
     // TODO: call /correct endpoint and upload photo
-    console.log("Correction:", { predicted: scanResult?.item, corrected });
+    console.log("Correction:", {
+      predicted: scanResult?.item,
+      predictedBin: scanResult?.bin,
+      correctedItem: item,
+      correctedBin: bin,
+    });
     resetToCamera();
   };
 
   const resetToCamera = () => {
+    if (scanTimeoutRef.current) clearTimeout(scanTimeoutRef.current);
     setAppState("camera");
     setScanResult(null);
   };
@@ -124,7 +136,12 @@ export default function App() {
         <Text style={styles.text}>Camera access is required to use Vertigo.</Text>
         <Pressable
           style={styles.settingsButton}
-          onPress={() => Linking.openSettings()}
+          onPress={() => {
+            Linking.openSettings().catch((error) => {
+              console.error("Could not open settings:", error);
+              Alert.alert("Unable to open settings", "Please open Settings manually and grant camera access to Vertigo.");
+            });
+          }}
         >
           <Text style={styles.settingsText}>Open Settings</Text>
         </Pressable>
@@ -143,10 +160,9 @@ export default function App() {
         ]}
         pointerEvents={appState === "camera" ? "none" : "auto"}
       >
-        <Image
-          source={scanResult?.photoUri ? { uri: scanResult.photoUri } : undefined}
-          style={styles.blurImage}
-        />
+        {scanResult?.photoUri && (
+          <Image source={{ uri: scanResult.photoUri }} style={styles.blurImage} />
+        )}
         <BlurView intensity={80} tint="dark" style={styles.blurFill} />
       </View>
 
