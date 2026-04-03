@@ -35,7 +35,7 @@ export type BinCategory = {
   note?: string;
 };
 
-export const BINS: BinCategory[] = [
+export const BINS: readonly BinCategory[] = [
   {
     id: "madaffald",
     nameEn: "Food Waste",
@@ -170,6 +170,6 @@ for (const bin of BINS) {
 }
 
 /** Convenience map for O(1) lookup by id */
-export const BINS_BY_ID: Record<string, BinCategory | undefined> = Object.fromEntries(
+export const BINS_BY_ID = Object.fromEntries(
   BINS.map((bin) => [bin.id, bin])
-);
+) as Record<BinId, BinCategory>;
