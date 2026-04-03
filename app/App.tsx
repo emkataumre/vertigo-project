@@ -1,19 +1,15 @@
-import { useEffect, useRef, useState } from "react";
-import { StyleSheet, Text, View, Pressable, Alert } from "react-native";
+import { type ReactNode, useEffect, useRef, useState } from "react";
+import { StyleSheet, Text, View, Image, Pressable, Alert, Linking } from "react-native";
+import { BlurView } from "expo-blur";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import { StatusBar } from "expo-status-bar";
 import ScanningOverlay from "./components/ScanningOverlay";
 import ConfirmationScreen from "./components/ConfirmationScreen";
 import ResultScreen from "./components/ResultScreen";
-import CorrectionScreen from "./components/CorrectionScreen";
+import CorrectionScreen, { type Alternative } from "./components/CorrectionScreen";
 import type { BinId } from "./constants/bins";
 
 type AppState = "camera" | "scanning" | "confirmation" | "result" | "correction";
-
-interface Alternative {
-  item: string;
-  bin: BinId;
-}
 
 interface ScanResult {
   photoUri: string;
@@ -23,18 +19,43 @@ interface ScanResult {
   alternatives: Alternative[];
 }
 
+interface ScreenLayerProps {
+  visible: boolean;
+  children: ReactNode;
+}
+
+function ScreenLayer({ visible, children }: ScreenLayerProps): ReactNode {
+  return (
+    <View
+      style={[styles.screenLayer, { opacity: visible ? 1 : 0 }]}
+      pointerEvents={visible ? "auto" : "none"}
+    >
+      {children}
+    </View>
+  );
+}
+
 export default function App() {
   const [permission, requestPermission] = useCameraPermissions();
   const [capturing, setCapturing] = useState(false);
   const [appState, setAppState] = useState<AppState>("camera");
   const [scanResult, setScanResult] = useState<ScanResult | null>(null);
   const cameraRef = useRef<CameraView>(null);
+  const scanTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
 
   useEffect(() => {
     if (!permission?.granted) {
-      requestPermission();
+      requestPermission().catch((error) => {
+        console.error("Camera permission request failed:", error);
+      });
     }
   }, [permission, requestPermission]);
+
+  useEffect(() => {
+    return () => {
+      if (scanTimeoutRef.current) clearTimeout(scanTimeoutRef.current);
+    };
+  }, []);
 
   const handleCapture = async () => {
     if (!cameraRef.current || capturing) return;
@@ -45,7 +66,7 @@ export default function App() {
         setAppState("scanning");
         // TODO: send to identify endpoint — for now simulate with timeout
         console.log("Photo captured:", photo.uri);
-        setTimeout(() => {
+        scanTimeoutRef.current = setTimeout(() => {
           setScanResult({
             photoUri: photo.uri,
             item: "Coffee filter",
@@ -59,9 +80,12 @@ export default function App() {
           });
           setAppState("confirmation");
         }, 2000);
+      } else {
+        Alert.alert("Capture failed", "The camera did not return a photo. Please try again.");
       }
-    } catch {
-      Alert.alert("Error", "Failed to capture photo. Please try again.");
+    } catch (error) {
+      console.error("handleCapture failed:", error);
+      Alert.alert("Capture failed", "Something went wrong. Please try again.");
     } finally {
       setCapturing(false);
     }
@@ -87,13 +111,23 @@ export default function App() {
   };
 
   if (!permission) {
-    return <View style={styles.container} />;
+    return (
+      <View style={styles.container}>
+        <Text style={styles.text}>Preparing camera...</Text>
+      </View>
+    );
   }
 
   if (!permission.granted) {
     return (
       <View style={styles.container}>
         <Text style={styles.text}>Camera access is required to use Vertigo.</Text>
+        <Pressable
+          style={styles.settingsButton}
+          onPress={() => Linking.openSettings()}
+        >
+          <Text style={styles.settingsText}>Open Settings</Text>
+        </Pressable>
       </View>
     );
   }
@@ -101,30 +135,57 @@ export default function App() {
   return (
     <View style={styles.container}>
       <CameraView style={styles.camera} ref={cameraRef} facing="back" />
-      {appState === "scanning" && <ScanningOverlay />}
-      {appState === "confirmation" && scanResult && (
-        <ConfirmationScreen
-          photoUri={scanResult.photoUri}
-          itemName={scanResult.item}
-          onConfirm={handleConfirm}
-          onDeny={handleDeny}
+
+      <View
+        style={[
+          styles.blurBackground,
+          { opacity: appState !== "camera" ? 1 : 0 },
+        ]}
+        pointerEvents={appState === "camera" ? "none" : "auto"}
+      >
+        <Image
+          source={scanResult?.photoUri ? { uri: scanResult.photoUri } : undefined}
+          style={styles.blurImage}
         />
-      )}
-      {appState === "correction" && scanResult && (
-        <CorrectionScreen
-          alternatives={scanResult.alternatives}
-          onSelect={handleCorrection}
-          onCancel={resetToCamera}
-        />
-      )}
-      {appState === "result" && scanResult && (
-        <ResultScreen
-          item={scanResult.item}
-          binId={scanResult.bin}
-          reason={scanResult.reason}
-          onDone={resetToCamera}
-        />
-      )}
+        <BlurView intensity={80} tint="dark" style={styles.blurFill} />
+      </View>
+
+      <ScreenLayer visible={appState === "scanning"}>
+        <ScanningOverlay />
+      </ScreenLayer>
+
+      <ScreenLayer visible={appState === "confirmation"}>
+        {scanResult && (
+          <ConfirmationScreen
+            photoUri={scanResult.photoUri}
+            itemName={scanResult.item}
+            onConfirm={handleConfirm}
+            onDeny={handleDeny}
+          />
+        )}
+      </ScreenLayer>
+
+      <ScreenLayer visible={appState === "correction"}>
+        {scanResult && (
+          <CorrectionScreen
+            alternatives={scanResult.alternatives}
+            onSelect={handleCorrection}
+            onCancel={resetToCamera}
+          />
+        )}
+      </ScreenLayer>
+
+      <ScreenLayer visible={appState === "result"}>
+        {scanResult && (
+          <ResultScreen
+            item={scanResult.item}
+            binId={scanResult.bin}
+            reason={scanResult.reason}
+            onDone={resetToCamera}
+          />
+        )}
+      </ScreenLayer>
+
       {appState === "camera" && (
         <View style={styles.buttonContainer}>
           <Pressable
@@ -150,6 +211,21 @@ const styles = StyleSheet.create({
   camera: {
     flex: 1,
   },
+  blurBackground: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  blurImage: {
+    ...StyleSheet.absoluteFillObject,
+    width: undefined,
+    height: undefined,
+    resizeMode: "cover",
+  },
+  blurFill: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  screenLayer: {
+    ...StyleSheet.absoluteFillObject,
+  },
   buttonContainer: {
     position: "absolute",
     bottom: 40,
@@ -171,5 +247,18 @@ const styles = StyleSheet.create({
     textAlign: "center",
     padding: 20,
     marginTop: 100,
+  },
+  settingsButton: {
+    alignSelf: "center",
+    marginTop: 16,
+    backgroundColor: "rgba(255, 255, 255, 0.12)",
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 12,
+  },
+  settingsText: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "600",
   },
 });

@@ -12,7 +12,7 @@ import {
 } from "react-native";
 import type { BinId } from "../constants/bins";
 
-interface Alternative {
+export interface Alternative {
   item: string;
   bin: BinId;
 }
@@ -33,6 +33,7 @@ export default function CorrectionScreen({
   const handleSubmitOther = () => {
     const trimmed = otherText.trim();
     if (trimmed) {
+      Keyboard.dismiss();
       onSelect(trimmed);
     }
   };
@@ -110,7 +111,6 @@ export default function CorrectionScreen({
 const styles = StyleSheet.create({
   container: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: "#000",
   },
   scroll: {
     flexGrow: 1,
