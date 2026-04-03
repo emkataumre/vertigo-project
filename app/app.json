@@ -13,7 +13,10 @@
       "backgroundColor": "#ffffff"
     },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSCameraUsageDescription": "Vertigo needs camera access to identify items for trash sorting."
+      }
     },
     "android": {
       "adaptiveIcon": {
