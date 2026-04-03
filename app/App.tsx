@@ -4,13 +4,15 @@ import { CameraView, useCameraPermissions } from "expo-camera";
 import { StatusBar } from "expo-status-bar";
 import ScanningOverlay from "./components/ScanningOverlay";
 import ConfirmationScreen from "./components/ConfirmationScreen";
+import ResultScreen from "./components/ResultScreen";
+import type { BinId } from "./constants/bins";
 
-type AppState = "camera" | "scanning" | "confirmation";
+type AppState = "camera" | "scanning" | "confirmation" | "result";
 
 interface ScanResult {
   photoUri: string;
   item: string;
-  bin: string;
+  bin: BinId;
   reason: string;
 }
 
@@ -54,9 +56,7 @@ export default function App() {
   };
 
   const handleConfirm = () => {
-    // TODO: navigate to result screen
-    console.log("Confirmed:", scanResult?.item);
-    resetToCamera();
+    setAppState("result");
   };
 
   const handleDeny = () => {
@@ -92,6 +92,14 @@ export default function App() {
           itemName={scanResult.item}
           onConfirm={handleConfirm}
           onDeny={handleDeny}
+        />
+      )}
+      {appState === "result" && scanResult && (
+        <ResultScreen
+          item={scanResult.item}
+          binId={scanResult.bin}
+          reason={scanResult.reason}
+          onDone={resetToCamera}
         />
       )}
       {appState === "camera" && (
