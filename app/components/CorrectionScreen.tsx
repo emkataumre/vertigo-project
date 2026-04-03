@@ -11,6 +11,7 @@ import {
   Platform,
 } from "react-native";
 import type { BinId } from "../constants/bins";
+import type { ClassifyTextResponse } from "../types/classifyText";
 
 export interface Alternative {
   item: string;
@@ -19,22 +20,36 @@ export interface Alternative {
 
 interface CorrectionScreenProps {
   alternatives: Alternative[];
-  onSelect: (item: string, bin: BinId | null) => void;
+  onSelect: (item: string, bin: BinId | null, reason?: string, reasonDa?: string) => void;
+  onClassify: (item: string) => Promise<ClassifyTextResponse | null>;
   onCancel: () => void;
 }
 
 export default function CorrectionScreen({
   alternatives,
   onSelect,
+  onClassify,
   onCancel,
 }: CorrectionScreenProps) {
   const [otherText, setOtherText] = useState("");
+  const [classifying, setClassifying] = useState(false);
 
-  const handleSubmitOther = () => {
+  const handleSubmitOther = async () => {
     const trimmed = otherText.trim();
-    if (trimmed) {
-      Keyboard.dismiss();
-      onSelect(trimmed, null);
+    if (!trimmed || classifying) return;
+    Keyboard.dismiss();
+    setClassifying(true);
+    try {
+      const result = await onClassify(trimmed);
+      if (result && result.bin_id !== null) {
+        onSelect(trimmed, result.bin_id, result.reason_en, result.reason_da);
+      } else {
+        // result is null (classify call failed) or bin_id is null (item unclassifiable) —
+        // both silently degrade: save correction without a bin and reset to camera.
+        onSelect(trimmed, null);
+      }
+    } finally {
+      setClassifying(false);
     }
   };
 
@@ -77,17 +92,19 @@ export default function CorrectionScreen({
             onChangeText={setOtherText}
             returnKeyType="send"
             onSubmitEditing={handleSubmitOther}
+            editable={!classifying}
           />
           <Pressable
             style={({ pressed }) => [
               styles.submitButton,
               pressed && styles.submitButtonPressed,
-              !otherText.trim() && styles.submitButtonDisabled,
+              (!otherText.trim() || classifying) && styles.submitButtonDisabled,
             ]}
             onPress={handleSubmitOther}
-            disabled={!otherText.trim()}
+            disabled={!otherText.trim() || classifying}
+            testID="send-button"
           >
-            <Text style={styles.submitText}>Send</Text>
+            <Text style={styles.submitText}>{classifying ? "..." : "Send"}</Text>
           </Pressable>
         </View>
 

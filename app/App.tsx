@@ -10,6 +10,7 @@ import ErrorOverlay from "./components/ErrorOverlay";
 import UnidentifiableOverlay from "./components/UnidentifiableOverlay";
 import type { BinId } from "./constants/bins";
 import { callIdentify } from "./lib/callIdentify";
+import { callClassifyText } from "./lib/callClassifyText";
 import { saveScan } from "./lib/saveScan";
 import { saveCorrection } from "./lib/saveCorrection";
 import { compressForIdentify, compressForStorage } from "./lib/compressImage";
@@ -136,7 +137,16 @@ export default function App() {
     setAppState("correction");
   };
 
-  const handleCorrection = (correctedItem: string, correctedBin: BinId | null) => {
+  const handleClassify = async (item: string) => {
+    try {
+      return await callClassifyText(item);
+    } catch (error) {
+      console.error("[handleClassify] classify-text failed:", error);
+      return null;
+    }
+  };
+
+  const handleCorrection = (correctedItem: string, correctedBin: BinId | null, reason?: string, reasonDa?: string) => {
     if (scanResult) {
       const { photoUri, photoBase64, item, bin } = scanResult;
       void compressForStorage(photoUri)
@@ -149,7 +159,13 @@ export default function App() {
     if (correctedBin) {
       setScanResult((prev) =>
         prev
-          ? { ...prev, item: correctedItem, bin: correctedBin, reason: `You identified this as ${correctedItem}.` }
+          ? {
+              ...prev,
+              item: correctedItem,
+              bin: correctedBin,
+              reason: reason ?? `You identified this as ${correctedItem}.`,
+              reasonDa: reasonDa ?? prev.reasonDa,
+            }
           : null
       );
       setAppState("result");
@@ -228,6 +244,7 @@ export default function App() {
           <CorrectionScreen
             alternatives={scanResult.alternatives}
             onSelect={handleCorrection}
+            onClassify={handleClassify}
             onCancel={resetToCamera}
           />
         )}
