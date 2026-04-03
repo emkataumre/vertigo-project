@@ -141,7 +141,7 @@ describe("App", () => {
   });
 
   it("error path: callIdentify throws → error overlay → try again", async () => {
-    mockCallIdentify.mockRejectedValue(new Error("Network error"));
+    mockCallIdentify.mockRejectedValue(new Error("Something failed"));
     render(<App />);
 
     await act(async () => {
@@ -158,6 +158,27 @@ describe("App", () => {
       fireEvent.press(screen.getByText("Try Again"));
     });
     expect(screen.queryByText("Something went wrong")).toBeNull();
+  });
+
+  it("network error path: Supabase fetch error → shows 'No internet connection'", async () => {
+    // Supabase wraps the underlying TypeError into its own error class —
+    // simulate that with a plain Error matching the Supabase message.
+    mockCallIdentify.mockRejectedValue(new Error("Failed to send a request to the Edge Function"));
+    render(<App />);
+
+    await act(async () => {
+      fireEvent.press(screen.getByTestId("capture-button"));
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("No internet connection")).toBeTruthy();
+    });
+    expect(mockSaveScan).not.toHaveBeenCalled();
+
+    await act(async () => {
+      fireEvent.press(screen.getByText("Try Again"));
+    });
+    expect(screen.queryByText("No internet connection")).toBeNull();
   });
 
   it("deny path: confirmation → correction screen with alternatives", async () => {

@@ -2,13 +2,14 @@ import { StyleSheet, View, Text, Pressable } from "react-native";
 
 interface ErrorOverlayProps {
   onRetry: () => void;
+  title?: string;
 }
 
-export default function ErrorOverlay({ onRetry }: ErrorOverlayProps) {
+export default function ErrorOverlay({ onRetry, title = "Something went wrong" }: ErrorOverlayProps) {
   return (
     <View style={styles.container} testID="error-overlay">
       <View style={styles.content}>
-        <Text style={styles.title}>Something went wrong</Text>
+        <Text style={styles.title}>{title}</Text>
         <Text style={styles.message}>
           Please try again.
         </Text>
