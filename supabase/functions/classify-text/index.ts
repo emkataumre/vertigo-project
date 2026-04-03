@@ -277,7 +277,7 @@ if (import.meta.main) Deno.serve(async (req: Request): Promise<Response> => {
         { role: "user", content: `Which Copenhagen bin does this item belong in? Item: "${item}"` },
       ],
     });
-  } catch (err) {
+  } catch (err: unknown) {
     if (err instanceof OpenAI.APIError) {
       console.error(
         `[classify-text] OpenAI API error: status=${err.status} code=${err.code} message=${err.message}`

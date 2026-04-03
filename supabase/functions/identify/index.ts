@@ -358,7 +358,7 @@ if (import.meta.main) Deno.serve(async (req: Request): Promise<Response> => {
         },
       ],
     });
-  } catch (err) {
+  } catch (err: unknown) {
     if (err instanceof OpenAI.APIError) {
       console.error(
         `[identify] OpenAI API error: status=${err.status} code=${err.code} message=${err.message}`
