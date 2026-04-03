@@ -3,11 +3,13 @@ import { render, screen, fireEvent, waitFor, act } from "@testing-library/react-
 import { useCameraPermissions } from "expo-camera";
 import App from "../App";
 import { callIdentify } from "../lib/callIdentify";
+import { callClassifyText } from "../lib/callClassifyText";
 import { saveScan } from "../lib/saveScan";
 import { saveCorrection } from "../lib/saveCorrection";
 import { compressForIdentify, compressForStorage } from "../lib/compressImage";
 
 jest.mock("../lib/callIdentify");
+jest.mock("../lib/callClassifyText");
 jest.mock("../lib/saveScan");
 jest.mock("../lib/saveCorrection");
 jest.mock("../lib/compressImage", () => ({
@@ -16,6 +18,7 @@ jest.mock("../lib/compressImage", () => ({
 }));
 
 const mockCallIdentify = callIdentify as jest.Mock;
+const mockCallClassifyText = callClassifyText as jest.Mock;
 const mockSaveScan = saveScan as jest.Mock;
 const mockSaveCorrection = saveCorrection as jest.Mock;
 const mockCompressForIdentify = compressForIdentify as jest.Mock;
@@ -55,6 +58,9 @@ beforeEach(() => {
   jest.clearAllMocks();
   mockSaveScan.mockResolvedValue(undefined);
   mockSaveCorrection.mockResolvedValue(undefined);
+  mockCallClassifyText.mockResolvedValue(null);
+  mockCompressForIdentify.mockResolvedValue(null);
+  mockCompressForStorage.mockResolvedValue(null);
   mockTakePictureAsync.mockResolvedValue(validPhoto);
   mockUseCameraPermissions.mockReturnValue([
     { granted: true },
@@ -215,15 +221,17 @@ describe("App", () => {
       fireEvent.press(screen.getByText("Coffee bag (plastic)"));
     });
 
-    // saveCorrection called with predicted + corrected data
-    expect(mockSaveCorrection).toHaveBeenCalledWith(
-      validPhoto.uri,
-      validPhoto.base64,
-      "Coffee filter",
-      "madaffald",
-      "Coffee bag (plastic)",
-      "restaffald"
-    );
+    // saveCorrection called with predicted + corrected data (fire-and-forget — use waitFor)
+    await waitFor(() => {
+      expect(mockSaveCorrection).toHaveBeenCalledWith(
+        validPhoto.uri,
+        validPhoto.base64,
+        "Coffee filter",
+        "madaffald",
+        "Coffee bag (plastic)",
+        "restaffald"
+      );
+    });
 
     // Shows result screen with corrected item's bin
     expect(screen.getByText("Residual Waste")).toBeTruthy();
@@ -308,13 +316,100 @@ describe("App", () => {
       fireEvent.press(screen.getByText("Coffee bag (plastic)"));
     });
 
-    expect(mockSaveCorrection).toHaveBeenCalledWith(
-      validPhoto.uri,
-      "compressed_storage_data",
-      "Coffee filter",
-      "madaffald",
-      "Coffee bag (plastic)",
-      "restaffald"
-    );
+    await waitFor(() => {
+      expect(mockSaveCorrection).toHaveBeenCalledWith(
+        validPhoto.uri,
+        "compressed_storage_data",
+        "Coffee filter",
+        "madaffald",
+        "Coffee bag (plastic)",
+        "restaffald"
+      );
+    });
+  });
+
+  it("free-text correction: classify-text success → saves correction with bin and shows result with reason", async () => {
+    mockCallIdentify.mockResolvedValue(validResponse);
+    mockCallClassifyText.mockResolvedValue({
+      bin_id: "madaffald",
+      reason_en: "Banana peels are organic waste.",
+      reason_da: "Bananskræller er organisk affald.",
+    });
+    render(<App />);
+
+    await act(async () => { fireEvent.press(screen.getByTestId("capture-button")); });
+    await waitFor(() => expect(screen.getByText("No")).toBeTruthy());
+    await act(async () => { fireEvent.press(screen.getByText("No")); });
+
+    fireEvent.changeText(screen.getByPlaceholderText("Type the item name"), "Banana peel");
+    await act(async () => { fireEvent.press(screen.getByTestId("send-button")); });
+
+    await waitFor(() => {
+      expect(screen.getByText("Food Waste")).toBeTruthy();
+    });
+    expect(screen.getByText("Banana peels are organic waste.")).toBeTruthy();
+
+    expect(mockCallClassifyText).toHaveBeenCalledWith("Banana peel");
+    await waitFor(() => {
+      expect(mockSaveCorrection).toHaveBeenCalledWith(
+        validPhoto.uri,
+        validPhoto.base64,
+        "Coffee filter",
+        "madaffald",
+        "Banana peel",
+        "madaffald"
+      );
+    });
+    expect(mockSaveScan).not.toHaveBeenCalled();
+  });
+
+  it("free-text correction: classify-text failure → saves correction with null bin and resets to camera", async () => {
+    mockCallIdentify.mockResolvedValue(validResponse);
+    mockCallClassifyText.mockRejectedValue(new Error("network error"));
+    render(<App />);
+
+    await act(async () => { fireEvent.press(screen.getByTestId("capture-button")); });
+    await waitFor(() => expect(screen.getByText("No")).toBeTruthy());
+    await act(async () => { fireEvent.press(screen.getByText("No")); });
+
+    fireEvent.changeText(screen.getByPlaceholderText("Type the item name"), "mystery item");
+    await act(async () => { fireEvent.press(screen.getByTestId("send-button")); });
+
+    await waitFor(() => {
+      expect(screen.queryByText("What is it?")).toBeNull();
+    });
+
+    await waitFor(() => {
+      expect(mockSaveCorrection).toHaveBeenCalledWith(
+        validPhoto.uri,
+        validPhoto.base64,
+        "Coffee filter",
+        "madaffald",
+        "mystery item",
+        null
+      );
+    });
+    expect(screen.queryByText("Food Waste")).toBeNull();
+  });
+
+  it("result screen is shown immediately — UI does not wait for saveCorrection to complete", async () => {
+    // saveCorrection is fire-and-forget: the result screen must appear before the save resolves.
+    // In production saveCorrection never rejects (catches internally), so we test the timing contract.
+    let resolveSave!: () => void;
+    mockCallIdentify.mockResolvedValue(validResponse);
+    mockSaveCorrection.mockReturnValue(new Promise<void>((resolve) => { resolveSave = resolve; }));
+    render(<App />);
+
+    await act(async () => { fireEvent.press(screen.getByTestId("capture-button")); });
+    await waitFor(() => expect(screen.getByText("No")).toBeTruthy());
+    await act(async () => { fireEvent.press(screen.getByText("No")); });
+    await act(async () => { fireEvent.press(screen.getByText("Coffee bag (plastic)")); });
+
+    // Result screen shown before save completes
+    await waitFor(() => expect(screen.getByText("Residual Waste")).toBeTruthy());
+
+    // Now let the save complete — no crash
+    await act(async () => { resolveSave(); });
+    expect(screen.getByText("Residual Waste")).toBeTruthy();
   });
 });
