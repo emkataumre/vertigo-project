@@ -4,7 +4,7 @@ import type { IdentifyResponse } from "../types/identify";
 
 /**
  * Fire-and-forget background save. Never rejects.
- * Retries once after 1 second on failure. All errors are caught and logged internally.
+ * Errors are retried with back-off. All errors are caught and logged internally.
  */
 export async function saveScan(
   photoUri: string,
@@ -16,7 +16,6 @@ export async function saveScan(
       // Convert base64 captured by the camera to bytes for upload
       const bytes = Uint8Array.from(atob(photoBase64), (c) => c.charCodeAt(0));
 
-      // Upload to photos bucket
       const path = `scans/${Date.now()}-${Math.random().toString(36).slice(2)}.jpg`;
       const { error: uploadError } = await supabase.storage
         .from("photos")
@@ -28,7 +27,6 @@ export async function saveScan(
       const { data: urlData } = supabase.storage.from("photos").getPublicUrl(path);
       const photoUrl = urlData.publicUrl;
 
-      // Insert scan record
       const { error: insertError } = await supabase.from("scans").insert({
         photo_url: photoUrl,
         item: result.item,
@@ -41,6 +39,6 @@ export async function saveScan(
       if (insertError) throw insertError;
     }, "saveScan");
   } catch (err) {
-    console.error("[saveScan] Failed permanently after retries:", err);
+    console.error("[saveScan] Failed permanently after retries for item:", result.item, err);
   }
 }

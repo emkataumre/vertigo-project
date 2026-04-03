@@ -1,7 +1,7 @@
 /**
  * @jest-environment node
  */
-import { saveScan } from "../lib/saveScan";
+import { saveCorrection } from "../lib/saveCorrection";
 import { withRetry } from "../lib/retry";
 
 // Bypass retry logic — save tests focus on save behavior, not retry behavior
@@ -27,14 +27,6 @@ jest.mock("../lib/supabase", () => ({
   },
 }));
 
-const validResponse = {
-  item: "Coffee filter",
-  bin_id: "madaffald" as const,
-  reason_en: "Used coffee filters go in food waste.",
-  reason_da: "Brugte kaffefiltre hører til i madaffald.",
-  alternatives: [{ item: "Coffee bag", bin_id: "restaffald" as const }],
-};
-
 // Minimal valid base64 (1x1 white JPEG)
 const validBase64 =
   "/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8U" +
@@ -49,25 +41,23 @@ beforeEach(() => {
   mockInsert.mockResolvedValue({ error: null });
 });
 
-describe("saveScan", () => {
-  it("uploads photo and inserts scan record on happy path", async () => {
-    await saveScan("file://photo.jpg", validBase64, validResponse);
+describe("saveCorrection", () => {
+  it("uploads photo and inserts correction record on happy path", async () => {
+    await saveCorrection("file://photo.jpg", validBase64, "Plastic bottle", "plast", "Glass bottle", "glas");
 
-    expect(jest.mocked(withRetry)).toHaveBeenCalledWith(expect.any(Function), "saveScan");
+    expect(jest.mocked(withRetry)).toHaveBeenCalledWith(expect.any(Function), "saveCorrection");
     expect(mockUpload).toHaveBeenCalledWith(
-      expect.stringMatching(/^scans\/\d+-\w+\.jpg$/),
+      expect.stringMatching(/^corrections\/\d+-\w+\.jpg$/),
       expect.any(Uint8Array),
       { contentType: "image/jpeg" }
     );
     expect(mockInsert).toHaveBeenCalledWith(
       expect.objectContaining({
         photo_url: "https://test.co/photo.jpg",
-        item: "Coffee filter",
-        bin_id: "madaffald",
-        reason_en: validResponse.reason_en,
-        reason_da: validResponse.reason_da,
-        alternative_bin_id: "restaffald",
-        alternatives: validResponse.alternatives,
+        predicted_item: "Plastic bottle",
+        predicted_bin_id: "plast",
+        corrected_item: "Glass bottle",
+        corrected_bin_id: "glas",
       })
     );
   });
@@ -76,11 +66,13 @@ describe("saveScan", () => {
     mockUpload.mockResolvedValue({ error: new Error("storage error") });
     const consoleSpy = jest.spyOn(console, "error").mockImplementation(() => {});
 
-    await saveScan("file://photo.jpg", validBase64, validResponse);
+    await saveCorrection("file://photo.jpg", validBase64, "Plastic bottle", "plast", "Glass bottle", "glas");
 
     expect(mockInsert).not.toHaveBeenCalled();
     expect(consoleSpy).toHaveBeenCalledWith(
-      expect.stringContaining("[saveScan]"),
+      expect.stringContaining("[saveCorrection]"),
+      expect.any(String),
+      expect.any(String),
       expect.any(String),
       expect.anything()
     );
@@ -91,34 +83,49 @@ describe("saveScan", () => {
     mockInsert.mockResolvedValue({ error: new Error("db error") });
     const consoleSpy = jest.spyOn(console, "error").mockImplementation(() => {});
 
-    await expect(saveScan("file://photo.jpg", validBase64, validResponse)).resolves.toBeUndefined();
+    await expect(
+      saveCorrection("file://photo.jpg", validBase64, "Plastic bottle", "plast", "Glass bottle", "glas")
+    ).resolves.toBeUndefined();
     expect(consoleSpy).toHaveBeenCalledWith(
-      expect.stringContaining("[saveScan]"),
+      expect.stringContaining("[saveCorrection]"),
+      expect.any(String),
+      expect.any(String),
       expect.any(String),
       expect.anything()
     );
     consoleSpy.mockRestore();
   });
 
-  it("sets alternative_bin_id to null when alternatives array is empty", async () => {
-    const responseNoAlts = { ...validResponse, alternatives: [] };
-    await saveScan("file://photo.jpg", validBase64, responseNoAlts);
+  it("handles null predicted_bin_id and corrected_bin_id", async () => {
+    await saveCorrection("file://photo.jpg", validBase64, "Unknown item", null, "Coffee grounds", null);
 
     expect(mockInsert).toHaveBeenCalledWith(
       expect.objectContaining({
-        alternative_bin_id: null,
-        alternatives: [],
+        predicted_bin_id: null,
+        corrected_bin_id: null,
       })
     );
   });
 
-  it("handles null bin_id", async () => {
-    const responseNullBin = { ...validResponse, bin_id: null };
-    await saveScan("file://photo.jpg", validBase64, responseNullBin);
+  it("handles null predicted_bin_id with a known corrected_bin_id", async () => {
+    await saveCorrection("file://photo.jpg", validBase64, "Unknown item", null, "Glass bottle", "glas");
 
     expect(mockInsert).toHaveBeenCalledWith(
-      expect.objectContaining({ bin_id: null })
+      expect.objectContaining({
+        predicted_bin_id: null,
+        corrected_bin_id: "glas",
+      })
     );
+  });
+
+  it("catches and logs error on invalid base64 without throwing", async () => {
+    const consoleSpy = jest.spyOn(console, "error").mockImplementation(() => {});
+
+    await expect(
+      saveCorrection("file://photo.jpg", "!!!invalid!!!", "Plastic bottle", "plast", "Glass bottle", "glas")
+    ).resolves.toBeUndefined();
+    expect(consoleSpy).toHaveBeenCalled();
+    consoleSpy.mockRestore();
   });
 
   it("does not throw when withRetry exhausts all attempts", async () => {
@@ -126,20 +133,16 @@ describe("saveScan", () => {
     jest.mocked(withRetry).mockRejectedValueOnce(retryError);
     const consoleSpy = jest.spyOn(console, "error").mockImplementation(() => {});
 
-    await expect(saveScan("file://photo.jpg", validBase64, validResponse)).resolves.toBeUndefined();
+    await expect(
+      saveCorrection("file://photo.jpg", validBase64, "Plastic bottle", "plast", "Glass bottle", "glas")
+    ).resolves.toBeUndefined();
     expect(consoleSpy).toHaveBeenCalledWith(
-      expect.stringContaining("[saveScan]"),
+      expect.stringContaining("[saveCorrection]"),
+      "Plastic bottle",   // predictedItem
       expect.any(String),
+      "Glass bottle",     // correctedItem
       retryError
     );
-    consoleSpy.mockRestore();
-  });
-
-  it("catches and logs error on invalid base64 without throwing", async () => {
-    const consoleSpy = jest.spyOn(console, "error").mockImplementation(() => {});
-
-    await expect(saveScan("file://photo.jpg", "!!!invalid!!!", validResponse)).resolves.toBeUndefined();
-    expect(consoleSpy).toHaveBeenCalled();
     consoleSpy.mockRestore();
   });
 });

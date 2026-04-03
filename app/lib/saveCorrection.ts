@@ -3,7 +3,7 @@ import { withRetry } from "./retry";
 
 /**
  * Fire-and-forget background save of a user correction. Never rejects.
- * Retries once after 1 second on failure. All errors are caught and logged internally.
+ * Errors are retried with back-off. All errors are caught and logged internally.
  */
 export async function saveCorrection(
   photoUri: string,
@@ -38,6 +38,6 @@ export async function saveCorrection(
       if (insertError) throw insertError;
     }, "saveCorrection");
   } catch (err) {
-    console.error("[saveCorrection] Failed permanently after retries:", err);
+    console.error("[saveCorrection] Failed permanently after retries. predictedItem:", predictedItem, "correctedItem:", correctedItem, err);
   }
 }

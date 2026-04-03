@@ -24,14 +24,11 @@ describe("withRetry", () => {
 
   it("does not log on first-attempt success", async () => {
     const fn = jest.fn().mockResolvedValue("ok");
-    const logSpy = jest.spyOn(console, "log").mockImplementation(() => {});
     const warnSpy = jest.spyOn(console, "warn").mockImplementation(() => {});
 
     await withRetry(fn, "test");
 
-    expect(logSpy).not.toHaveBeenCalled();
     expect(warnSpy).not.toHaveBeenCalled();
-    logSpy.mockRestore();
     warnSpy.mockRestore();
   });
 
@@ -40,7 +37,6 @@ describe("withRetry", () => {
       .mockRejectedValueOnce(new Error("transient"))
       .mockResolvedValueOnce("ok");
     const warnSpy = jest.spyOn(console, "warn").mockImplementation(() => {});
-    const logSpy = jest.spyOn(console, "log").mockImplementation(() => {});
 
     const promise = withRetry(fn, "test", { delayMs: 1000 });
     await jest.runAllTimersAsync();
@@ -52,11 +48,10 @@ describe("withRetry", () => {
       expect.stringContaining("[test] Attempt 1/2 failed, retrying in 1000ms:"),
       expect.any(Error)
     );
-    expect(logSpy).toHaveBeenCalledWith(
+    expect(warnSpy).toHaveBeenCalledWith(
       expect.stringContaining("[test] Succeeded on retry (attempt 2/2)")
     );
     warnSpy.mockRestore();
-    logSpy.mockRestore();
   });
 
   it("throws the final error when all attempts fail", async () => {
@@ -103,7 +98,6 @@ describe("withRetry", () => {
       .mockRejectedValueOnce(new Error("fail"))
       .mockResolvedValueOnce("ok");
     const warnSpy = jest.spyOn(console, "warn").mockImplementation(() => {});
-    const logSpy = jest.spyOn(console, "log").mockImplementation(() => {});
 
     const promise = withRetry(fn, "test", { delayMs: 500 });
 
@@ -120,7 +114,6 @@ describe("withRetry", () => {
     expect(fn).toHaveBeenCalledTimes(2);
 
     warnSpy.mockRestore();
-    logSpy.mockRestore();
   });
 
   it("respects custom attempts count", async () => {

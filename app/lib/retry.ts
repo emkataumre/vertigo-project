@@ -16,7 +16,7 @@ export async function withRetry<T>(
     try {
       const result = await fn();
       if (i > 1) {
-        console.log(`[${label}] Succeeded on retry (attempt ${i}/${attempts})`);
+        console.warn(`[${label}] Succeeded on retry (attempt ${i}/${attempts})`);
       }
       return result;
     } catch (err) {
