@@ -5,6 +5,7 @@ import App from "../App";
 import { callIdentify } from "../lib/callIdentify";
 import { saveScan } from "../lib/saveScan";
 import { saveCorrection } from "../lib/saveCorrection";
+import { compressForIdentify, compressForStorage } from "../lib/compressImage";
 
 jest.mock("../lib/callIdentify");
 jest.mock("../lib/saveScan");
@@ -17,6 +18,8 @@ jest.mock("../lib/compressImage", () => ({
 const mockCallIdentify = callIdentify as jest.Mock;
 const mockSaveScan = saveScan as jest.Mock;
 const mockSaveCorrection = saveCorrection as jest.Mock;
+const mockCompressForIdentify = compressForIdentify as jest.Mock;
+const mockCompressForStorage = compressForStorage as jest.Mock;
 const mockUseCameraPermissions = useCameraPermissions as jest.Mock;
 
 // Camera ref mock — returned by useRef, used to call takePictureAsync
@@ -235,5 +238,62 @@ describe("App", () => {
       expect(screen.getByText("Something went wrong")).toBeTruthy();
     });
     expect(mockCallIdentify).not.toHaveBeenCalled();
+  });
+
+  it("compressed base64 is sent to callIdentify when compression succeeds", async () => {
+    mockCompressForIdentify.mockResolvedValue("compressed_identify_data");
+    mockCallIdentify.mockResolvedValue(validResponse);
+    render(<App />);
+
+    await act(async () => {
+      fireEvent.press(screen.getByTestId("capture-button"));
+    });
+
+    await waitFor(() => expect(screen.getByText("Coffee filter?")).toBeTruthy());
+    expect(mockCallIdentify).toHaveBeenCalledWith("compressed_identify_data");
+  });
+
+  it("compressed base64 is passed to saveScan when storage compression succeeds", async () => {
+    mockCompressForStorage.mockResolvedValue("compressed_storage_data");
+    mockCallIdentify.mockResolvedValue(validResponse);
+    render(<App />);
+
+    await act(async () => {
+      fireEvent.press(screen.getByTestId("capture-button"));
+    });
+    await waitFor(() => expect(screen.getByText("Yes")).toBeTruthy());
+    await act(async () => {
+      fireEvent.press(screen.getByText("Yes"));
+    });
+
+    expect(mockSaveScan).toHaveBeenCalledWith(
+      validPhoto.uri,
+      "compressed_storage_data",
+      expect.objectContaining({ item: "Coffee filter" })
+    );
+  });
+
+  it("compressed base64 is passed to saveCorrection when storage compression succeeds", async () => {
+    mockCompressForStorage.mockResolvedValue("compressed_storage_data");
+    mockCallIdentify.mockResolvedValue(validResponse);
+    render(<App />);
+
+    await act(async () => {
+      fireEvent.press(screen.getByTestId("capture-button"));
+    });
+    await waitFor(() => expect(screen.getByText("No")).toBeTruthy());
+    await act(async () => { fireEvent.press(screen.getByText("No")); });
+    await act(async () => {
+      fireEvent.press(screen.getByText("Coffee bag (plastic)"));
+    });
+
+    expect(mockSaveCorrection).toHaveBeenCalledWith(
+      validPhoto.uri,
+      "compressed_storage_data",
+      "Coffee filter",
+      "madaffald",
+      "Coffee bag (plastic)",
+      "restaffald"
+    );
   });
 });

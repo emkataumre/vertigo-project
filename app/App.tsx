@@ -116,9 +116,11 @@ export default function App() {
         reason_da: scanResult.reasonDa,
         alternatives: scanResult.alternatives.map((a) => ({ item: a.item, bin_id: a.bin })),
       };
-      void compressForStorage(photoUri).then((compressed) => {
-        void saveScan(photoUri, compressed ?? photoBase64, result);
-      });
+      void compressForStorage(photoUri)
+        .catch(() => null)
+        .then((compressed) => {
+          void saveScan(photoUri, compressed ?? photoBase64, result);
+        });
     }
     setAppState("result");
   };
@@ -130,9 +132,11 @@ export default function App() {
   const handleCorrection = (correctedItem: string, correctedBin: BinId | null) => {
     if (scanResult) {
       const { photoUri, photoBase64, item, bin } = scanResult;
-      void compressForStorage(photoUri).then((compressed) => {
-        void saveCorrection(photoUri, compressed ?? photoBase64, item, bin, correctedItem, correctedBin);
-      });
+      void compressForStorage(photoUri)
+        .catch(() => null)
+        .then((compressed) => {
+          void saveCorrection(photoUri, compressed ?? photoBase64, item, bin, correctedItem, correctedBin);
+        });
     }
 
     if (correctedBin) {

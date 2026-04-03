@@ -22,14 +22,14 @@ const COMPRESSED_BASE64 = "compressed_base64_data";
 
 beforeEach(() => {
   jest.clearAllMocks();
-  // Default: landscape image (width >= height) → resize by width
+  // Default: landscape image above target size → resize by width
   mockGetSize.mockImplementation((_uri: string, success: (w: number, h: number) => void) =>
     success(1920, 1080)
   );
 });
 
 describe("compressForIdentify", () => {
-  it("returns compressed base64 on success", async () => {
+  it("resizes landscape images above 800px by width", async () => {
     mockManipulateAsync.mockResolvedValue({ base64: COMPRESSED_BASE64, uri: "file:///tmp/out.jpg" });
 
     const result = await compressForIdentify(TEST_URI);
@@ -43,7 +43,7 @@ describe("compressForIdentify", () => {
     );
   });
 
-  it("resizes by height for portrait images", async () => {
+  it("resizes portrait images above 800px by height", async () => {
     mockGetSize.mockImplementation((_uri: string, success: (w: number, h: number) => void) =>
       success(1080, 1920)
     );
@@ -58,63 +58,95 @@ describe("compressForIdentify", () => {
     );
   });
 
+  it("resizes square images by width (width >= height boundary)", async () => {
+    mockGetSize.mockImplementation((_uri: string, success: (w: number, h: number) => void) =>
+      success(1200, 1200)
+    );
+    mockManipulateAsync.mockResolvedValue({ base64: COMPRESSED_BASE64, uri: "file:///tmp/out.jpg" });
+
+    await compressForIdentify(TEST_URI);
+
+    expect(mockManipulateAsync).toHaveBeenCalledWith(
+      TEST_URI,
+      [{ resize: { width: 800 } }],
+      { compress: 0.6, format: "jpeg", base64: true }
+    );
+  });
+
+  it("skips resize when image is already at or below 800px", async () => {
+    mockGetSize.mockImplementation((_uri: string, success: (w: number, h: number) => void) =>
+      success(600, 400)
+    );
+    mockManipulateAsync.mockResolvedValue({ base64: COMPRESSED_BASE64, uri: "file:///tmp/out.jpg" });
+
+    await compressForIdentify(TEST_URI);
+
+    expect(mockManipulateAsync).toHaveBeenCalledWith(
+      TEST_URI,
+      [],
+      { compress: 0.6, format: "jpeg", base64: true }
+    );
+  });
+
   it("returns null when manipulator returns no base64", async () => {
     mockManipulateAsync.mockResolvedValue({ uri: "file:///tmp/out.jpg" });
 
-    const warnSpy = jest.spyOn(console, "warn").mockImplementation(() => {});
+    const errorSpy = jest.spyOn(console, "error").mockImplementation(() => {});
     const result = await compressForIdentify(TEST_URI);
-    expect(warnSpy).not.toHaveBeenCalled();
-    warnSpy.mockRestore();
+    expect(errorSpy).not.toHaveBeenCalled();
+    errorSpy.mockRestore();
 
     expect(result).toBeNull();
   });
 
-  it("returns empty string when manipulator returns empty string base64", async () => {
-    // "" ?? null evaluates to "" (not null), because "" is not nullish.
-    // This test documents that behavior explicitly.
+  it("returns null when manipulator returns empty string base64", async () => {
+    // "" is falsy, so `|| null` treats it as a failure and falls back to null.
     mockManipulateAsync.mockResolvedValue({ base64: "", uri: "file:///tmp/out.jpg" });
 
     const result = await compressForIdentify(TEST_URI);
 
-    expect(result).toBe("");
+    expect(result).toBeNull();
   });
 
-  it("returns null and logs a warning when manipulator throws", async () => {
+  it("returns null and logs an error when manipulator throws", async () => {
     mockManipulateAsync.mockRejectedValue(new Error("manipulator error"));
-    const warnSpy = jest.spyOn(console, "warn").mockImplementation(() => {});
+    const errorSpy = jest.spyOn(console, "error").mockImplementation(() => {});
     try {
       const result = await compressForIdentify(TEST_URI);
       expect(result).toBeNull();
-      expect(warnSpy).toHaveBeenCalledWith(
+      expect(errorSpy).toHaveBeenCalledWith(
         expect.stringContaining("[compressForIdentify]"),
         expect.anything()
       );
     } finally {
-      warnSpy.mockRestore();
+      errorSpy.mockRestore();
     }
   });
 
-  it("returns null and logs a warning when getSize fails", async () => {
+  it("returns null and logs an error when getSize fails", async () => {
     mockGetSize.mockImplementation(
       (_uri: string, _success: unknown, failure: (err: Error) => void) =>
         failure(new Error("getSize error"))
     );
-    const warnSpy = jest.spyOn(console, "warn").mockImplementation(() => {});
+    const errorSpy = jest.spyOn(console, "error").mockImplementation(() => {});
     try {
       const result = await compressForIdentify(TEST_URI);
       expect(result).toBeNull();
-      expect(warnSpy).toHaveBeenCalledWith(
+      expect(errorSpy).toHaveBeenCalledWith(
         expect.stringContaining("[compressForIdentify]"),
         expect.anything()
       );
     } finally {
-      warnSpy.mockRestore();
+      errorSpy.mockRestore();
     }
   });
 });
 
 describe("compressForStorage", () => {
-  it("returns compressed base64 on success", async () => {
+  it("resizes landscape images above 2048px by width", async () => {
+    mockGetSize.mockImplementation((_uri: string, success: (w: number, h: number) => void) =>
+      success(4032, 3024)
+    );
     mockManipulateAsync.mockResolvedValue({ base64: COMPRESSED_BASE64, uri: "file:///tmp/out.jpg" });
 
     const result = await compressForStorage(TEST_URI);
@@ -128,9 +160,9 @@ describe("compressForStorage", () => {
     );
   });
 
-  it("resizes by height for portrait images", async () => {
+  it("resizes portrait images above 2048px by height", async () => {
     mockGetSize.mockImplementation((_uri: string, success: (w: number, h: number) => void) =>
-      success(1080, 1920)
+      success(3024, 4032)
     );
     mockManipulateAsync.mockResolvedValue({ base64: COMPRESSED_BASE64, uri: "file:///tmp/out.jpg" });
 
@@ -143,57 +175,86 @@ describe("compressForStorage", () => {
     );
   });
 
+  it("resizes square images by width (width >= height boundary)", async () => {
+    mockGetSize.mockImplementation((_uri: string, success: (w: number, h: number) => void) =>
+      success(3000, 3000)
+    );
+    mockManipulateAsync.mockResolvedValue({ base64: COMPRESSED_BASE64, uri: "file:///tmp/out.jpg" });
+
+    await compressForStorage(TEST_URI);
+
+    expect(mockManipulateAsync).toHaveBeenCalledWith(
+      TEST_URI,
+      [{ resize: { width: 2048 } }],
+      { compress: 0.85, format: "jpeg", base64: true }
+    );
+  });
+
+  it("skips resize when image is already at or below 2048px", async () => {
+    mockGetSize.mockImplementation((_uri: string, success: (w: number, h: number) => void) =>
+      success(1920, 1080)
+    );
+    mockManipulateAsync.mockResolvedValue({ base64: COMPRESSED_BASE64, uri: "file:///tmp/out.jpg" });
+
+    await compressForStorage(TEST_URI);
+
+    expect(mockManipulateAsync).toHaveBeenCalledWith(
+      TEST_URI,
+      [],
+      { compress: 0.85, format: "jpeg", base64: true }
+    );
+  });
+
   it("returns null when manipulator returns no base64", async () => {
     mockManipulateAsync.mockResolvedValue({ uri: "file:///tmp/out.jpg" });
 
-    const warnSpy = jest.spyOn(console, "warn").mockImplementation(() => {});
+    const errorSpy = jest.spyOn(console, "error").mockImplementation(() => {});
     const result = await compressForStorage(TEST_URI);
-    expect(warnSpy).not.toHaveBeenCalled();
-    warnSpy.mockRestore();
+    expect(errorSpy).not.toHaveBeenCalled();
+    errorSpy.mockRestore();
 
     expect(result).toBeNull();
   });
 
-  it("returns empty string when manipulator returns empty string base64", async () => {
-    // "" ?? null evaluates to "" (not null), because "" is not nullish.
-    // This test documents that behavior explicitly.
+  it("returns null when manipulator returns empty string base64", async () => {
+    // "" is falsy, so `|| null` treats it as a failure and falls back to null.
     mockManipulateAsync.mockResolvedValue({ base64: "", uri: "file:///tmp/out.jpg" });
 
     const result = await compressForStorage(TEST_URI);
 
-    expect(result).toBe("");
+    expect(result).toBeNull();
   });
 
-  it("returns null and logs a warning when manipulator throws", async () => {
+  it("returns null and logs an error when manipulator throws", async () => {
     mockManipulateAsync.mockRejectedValue(new Error("manipulator error"));
-    const warnSpy = jest.spyOn(console, "warn").mockImplementation(() => {});
+    const errorSpy = jest.spyOn(console, "error").mockImplementation(() => {});
     try {
       const result = await compressForStorage(TEST_URI);
       expect(result).toBeNull();
-      expect(warnSpy).toHaveBeenCalledWith(
+      expect(errorSpy).toHaveBeenCalledWith(
         expect.stringContaining("[compressForStorage]"),
         expect.anything()
       );
     } finally {
-      warnSpy.mockRestore();
+      errorSpy.mockRestore();
     }
   });
 
-  it("returns null and logs a warning when getSize fails", async () => {
+  it("returns null and logs an error when getSize fails", async () => {
     mockGetSize.mockImplementation(
       (_uri: string, _success: unknown, failure: (err: Error) => void) =>
         failure(new Error("getSize error"))
     );
-    const warnSpy = jest.spyOn(console, "warn").mockImplementation(() => {});
+    const errorSpy = jest.spyOn(console, "error").mockImplementation(() => {});
     try {
       const result = await compressForStorage(TEST_URI);
       expect(result).toBeNull();
-      expect(warnSpy).toHaveBeenCalledWith(
+      expect(errorSpy).toHaveBeenCalledWith(
         expect.stringContaining("[compressForStorage]"),
         expect.anything()
       );
     } finally {
-      warnSpy.mockRestore();
+      errorSpy.mockRestore();
     }
   });
 });

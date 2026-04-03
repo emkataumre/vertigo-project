@@ -9,27 +9,38 @@ function getImageSize(uri: string): Promise<{ width: number; height: number }> {
 
 /**
  * Compress aggressively for the identify call.
- * ~800px longest side, 60% JPEG quality — reduces a typical phone photo
- * from 3-5 MB to ~50-100 KB. GPT-4o-mini uses detail:"low" (512x512) so
- * sending anything bigger is wasted bandwidth.
+ * ~800px longest side, 60% JPEG quality — typically reduces a phone photo
+ * from 3-5 MB to roughly 50-150 KB (varies by image content). The identify
+ * endpoint uses low-detail vision mode (~512x512), so sending anything larger
+ * is wasted bandwidth.
  *
- * Returns compressed base64, or null if compression fails (caller should
- * fall back to the original base64).
+ * Returns compressed base64, or null if compression fails (errors are caught
+ * and logged internally; caller should fall back to the original base64).
  */
 export async function compressForIdentify(uri: string): Promise<string | null> {
   try {
     const { width, height } = await getImageSize(uri);
-    const resizeAction =
-      width >= height ? { resize: { width: 800 } } : { resize: { height: 800 } };
+    const longestSide = Math.max(width, height);
+    const actions =
+      longestSide > 800
+        ? [width >= height ? { resize: { width: 800 } } : { resize: { height: 800 } }]
+        : [];
 
     const result = await ImageManipulator.manipulateAsync(
       uri,
-      [resizeAction],
+      actions,
       { compress: 0.6, format: ImageManipulator.SaveFormat.JPEG, base64: true }
     );
-    return result.base64 ?? null;
+    const compressed = result.base64 || null;
+    if (compressed) {
+      console.log(
+        `[compressForIdentify] ${(compressed.length * 0.75 / 1024).toFixed(0)} KB` +
+        ` (original longest side: ${longestSide}px)`
+      );
+    }
+    return compressed;
   } catch (err) {
-    console.warn("[compressForIdentify] Compression failed, falling back to original:", err);
+    console.error("[compressForIdentify] Compression failed, falling back to original:", err);
     return null;
   }
 }
@@ -39,23 +50,33 @@ export async function compressForIdentify(uri: string): Promise<string | null> {
  * ~2048px longest side, 85% JPEG quality — preserves most detail while
  * significantly reducing file size vs full device resolution.
  *
- * Returns compressed base64, or null if compression fails (caller should
- * fall back to the original base64).
+ * Returns compressed base64, or null if compression fails (errors are caught
+ * and logged internally; caller should fall back to the original base64).
  */
 export async function compressForStorage(uri: string): Promise<string | null> {
   try {
     const { width, height } = await getImageSize(uri);
-    const resizeAction =
-      width >= height ? { resize: { width: 2048 } } : { resize: { height: 2048 } };
+    const longestSide = Math.max(width, height);
+    const actions =
+      longestSide > 2048
+        ? [width >= height ? { resize: { width: 2048 } } : { resize: { height: 2048 } }]
+        : [];
 
     const result = await ImageManipulator.manipulateAsync(
       uri,
-      [resizeAction],
+      actions,
       { compress: 0.85, format: ImageManipulator.SaveFormat.JPEG, base64: true }
     );
-    return result.base64 ?? null;
+    const compressed = result.base64 || null;
+    if (compressed) {
+      console.log(
+        `[compressForStorage] ${(compressed.length * 0.75 / 1024).toFixed(0)} KB` +
+        ` (original longest side: ${longestSide}px)`
+      );
+    }
+    return compressed;
   } catch (err) {
-    console.warn("[compressForStorage] Compression failed, falling back to original:", err);
+    console.error("[compressForStorage] Compression failed, falling back to original:", err);
     return null;
   }
 }
