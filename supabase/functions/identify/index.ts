@@ -325,6 +325,7 @@ if (import.meta.main) Deno.serve(async (req: Request): Promise<Response> => {
     completion = await openai.chat.completions.create({
       model: "gpt-4o-mini",
       max_tokens: 500,
+      temperature: 0,
       response_format: {
         type: "json_schema",
         json_schema: {
