@@ -8,6 +8,7 @@ import ConfirmationScreen from "./components/ConfirmationScreen";
 import ResultScreen from "./components/ResultScreen";
 import CorrectionScreen, { type Alternative } from "./components/CorrectionScreen";
 import type { BinId } from "./constants/bins";
+import { saveScan } from "./lib/saveScan";
 
 type AppState = "camera" | "scanning" | "confirmation" | "result" | "correction";
 
@@ -69,21 +70,38 @@ export default function App() {
       const photo = await cameraRef.current.takePictureAsync({ base64: true });
       if (photo) {
         setAppState("scanning");
-        // TODO: send to identify endpoint — for now simulate with timeout
+        // TODO: send photo to the identify endpoint and await the real IdentifyResponse.
+        // Note: IdentifyResponse does not include `item` or `alternatives` — a decision is
+        // needed before wiring this in: extend the endpoint to return them, derive them
+        // client-side from the response, or revise the ScanResult interface to remove them.
+        // For now, simulate the full flow with a timeout.
         console.log("Photo captured:", photo.uri);
         scanTimeoutRef.current = setTimeout(() => {
-          setScanResult({
+          const result = {
             photoUri: photo.uri,
             item: "Coffee filter",
-            bin: "madaffald",
+            bin: "madaffald" as BinId,
             reason: "Used coffee filters are organic waste and go in the green bio bag.",
             alternatives: [
               { item: "Coffee bag (plastic)", bin: "restaffald" },
               { item: "Coffee capsule (aluminium)", bin: "metal" },
               { item: "Paper cup", bin: "papir" },
             ],
-          });
+          };
+          setScanResult(result);
           setAppState("confirmation");
+          // Fire-and-forget background save — UI is never blocked. Failures are logged
+          // to console only and are intentionally not surfaced to the user.
+          // TODO: when wiring in the identify endpoint, remove the entire setTimeout simulation
+          // above and replace it with a real HTTP call. Pass the returned IdentifyResponse
+          // directly to saveScan. Keep in mind that IdentifyResponse has no `item` or
+          // `alternatives` fields — those will need to be sourced separately (see TODO above).
+          void saveScan(photo.uri, {
+            bin_id: result.bin,
+            reason_en: result.reason,
+            reason_da: result.reason,
+            alternative_bin_id: null,
+          });
         }, 2000);
       } else {
         Alert.alert("Capture failed", "The camera did not return a photo. Please try again.");
