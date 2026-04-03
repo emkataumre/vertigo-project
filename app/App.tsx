@@ -6,16 +6,22 @@ import ScanningOverlay from "./components/ScanningOverlay";
 import ConfirmationScreen from "./components/ConfirmationScreen";
 import ResultScreen from "./components/ResultScreen";
 import CorrectionScreen, { type Alternative } from "./components/CorrectionScreen";
+import ErrorOverlay from "./components/ErrorOverlay";
+import UnidentifiableOverlay from "./components/UnidentifiableOverlay";
 import type { BinId } from "./constants/bins";
+import { callIdentify } from "./lib/callIdentify";
 import { saveScan } from "./lib/saveScan";
+import { saveCorrection } from "./lib/saveCorrection";
 
-type AppState = "camera" | "scanning" | "confirmation" | "result" | "correction";
+type AppState = "camera" | "scanning" | "confirmation" | "result" | "correction" | "error" | "unidentifiable";
 
 interface ScanResult {
   photoUri: string;
+  photoBase64: string;
   item: string;
   bin: BinId;
   reason: string;
+  reasonDa: string;
   alternatives: Alternative[];
 }
 
@@ -30,7 +36,7 @@ function ScreenLayer({ visible, children }: ScreenLayerProps): ReactNode {
       style={[styles.screenLayer, { opacity: visible ? 1 : 0 }]}
       pointerEvents={visible ? "auto" : "none"}
     >
-      {children}
+      {visible ? children : null}
     </View>
   );
 }
@@ -42,81 +48,72 @@ export default function App() {
   const [scanResult, setScanResult] = useState<ScanResult | null>(null);
   const [capturedPhotoUri, setCapturedPhotoUri] = useState<string | null>(null);
   const cameraRef = useRef<CameraView>(null);
-  const scanTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   useEffect(() => {
-    if (!permission?.granted) {
-      requestPermission().catch((error) => {
-        console.error("Camera permission request failed:", error);
-        Alert.alert(
-          "Permission error",
-          "Could not request camera access. Please restart the app or enable it in Settings.",
-          [{ text: "Open Settings", onPress: () => Linking.openSettings().catch(() => {}) }]
-        );
-      });
-    }
-  }, [permission, requestPermission]);
-
-  useEffect(() => {
-    return () => {
-      if (scanTimeoutRef.current) clearTimeout(scanTimeoutRef.current);
-    };
+    requestPermission().catch((error) => {
+      console.error("Camera permission request failed:", error);
+      Alert.alert(
+        "Permission error",
+        "Could not request camera access. Please restart the app or enable it in Settings.",
+        [{ text: "Open Settings", onPress: () => Linking.openSettings().catch((error) => { console.error("Could not open settings:", error); }) }]
+      );
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleCapture = async () => {
     if (!cameraRef.current || capturing) return;
     setCapturing(true);
     try {
+      console.log("[handleCapture] Taking picture...");
       const photo = await cameraRef.current.takePictureAsync({ base64: true });
-      if (photo) {
-        setCapturedPhotoUri(photo.uri);
-        setAppState("scanning");
-        // TODO: send photo to the identify endpoint and await the real IdentifyResponse.
-        // Note: IdentifyResponse does not include `item` or `alternatives` — a decision is
-        // needed before wiring this in: extend the endpoint to return them, derive them
-        // client-side from the response, or revise the ScanResult interface to remove them.
-        // For now, simulate the full flow with a timeout.
-        console.log("Photo captured:", photo.uri);
-        scanTimeoutRef.current = setTimeout(() => {
-          const result = {
-            photoUri: photo.uri,
-            item: "Coffee filter",
-            bin: "madaffald" as BinId,
-            reason: "Used coffee filters are organic waste and go in the green bio bag.",
-            alternatives: [
-              { item: "Coffee bag (plastic)", bin: "restaffald" as BinId },
-              { item: "Coffee capsule (aluminium)", bin: "metal" as BinId },
-              { item: "Paper cup", bin: "papir" as BinId },
-            ],
-          };
-          setScanResult(result);
-          setAppState("confirmation");
-          // Fire-and-forget background save — UI is never blocked. Failures are logged
-          // to console only and are intentionally not surfaced to the user.
-          // TODO: when wiring in the identify endpoint, remove the entire setTimeout simulation
-          // above and replace it with a real HTTP call. Pass the returned IdentifyResponse
-          // directly to saveScan. Keep in mind that IdentifyResponse has no `item` or
-          // `alternatives` fields — those will need to be sourced separately (see TODO above).
-          void saveScan(photo.uri, photo.base64 ?? "", {
-            bin_id: result.bin,
-            reason_en: result.reason,
-            reason_da: result.reason,
-            alternative_bin_id: null,
-          });
-        }, 2000);
-      } else {
-        Alert.alert("Capture failed", "The camera did not return a photo. Please try again.");
+      if (!photo || !photo.base64) {
+        console.error("[handleCapture] Camera returned no photo or missing base64 data");
+        setAppState("error");
+        return;
       }
+
+      console.log("[handleCapture] Photo captured, calling identify...");
+      setCapturedPhotoUri(photo.uri);
+      setAppState("scanning");
+
+      const response = await callIdentify(photo.base64);
+      console.log("[handleCapture] Identify returned:", response.item);
+
+      if (response.bin_id === null) {
+        setAppState("unidentifiable");
+        return;
+      }
+
+      const result: ScanResult = {
+        photoUri: photo.uri,
+        photoBase64: photo.base64,
+        item: response.item,
+        bin: response.bin_id,
+        reason: response.reason_en,
+        reasonDa: response.reason_da,
+        alternatives: response.alternatives.map((a) => ({ item: a.item, bin: a.bin_id })),
+      };
+      setScanResult(result);
+      setAppState("confirmation");
     } catch (error) {
       console.error("handleCapture failed:", error);
-      Alert.alert("Capture failed", "Something went wrong. Please try again.");
-      resetToCamera();
+      setAppState("error");
     } finally {
       setCapturing(false);
     }
   };
 
   const handleConfirm = () => {
+    if (scanResult) {
+      void saveScan(scanResult.photoUri, scanResult.photoBase64, {
+        item: scanResult.item,
+        bin_id: scanResult.bin,
+        reason_en: scanResult.reason,
+        reason_da: scanResult.reasonDa,
+        alternatives: scanResult.alternatives.map((a) => ({ item: a.item, bin_id: a.bin })),
+      });
+    }
     setAppState("result");
   };
 
@@ -124,19 +121,31 @@ export default function App() {
     setAppState("correction");
   };
 
-  const handleCorrection = (item: string, bin: BinId | null) => {
-    // TODO: call /correct endpoint and upload photo
-    console.log("Correction:", {
-      predicted: scanResult?.item,
-      predictedBin: scanResult?.bin,
-      correctedItem: item,
-      correctedBin: bin,
-    });
-    resetToCamera();
+  const handleCorrection = (correctedItem: string, correctedBin: BinId | null) => {
+    if (scanResult) {
+      void saveCorrection(
+        scanResult.photoUri,
+        scanResult.photoBase64,
+        scanResult.item,
+        scanResult.bin,
+        correctedItem,
+        correctedBin
+      );
+    }
+
+    if (correctedBin) {
+      setScanResult((prev) =>
+        prev
+          ? { ...prev, item: correctedItem, bin: correctedBin, reason: `You identified this as ${correctedItem}.` }
+          : null
+      );
+      setAppState("result");
+    } else {
+      resetToCamera();
+    }
   };
 
   const resetToCamera = () => {
-    if (scanTimeoutRef.current) clearTimeout(scanTimeoutRef.current);
     setAppState("camera");
     setScanResult(null);
     setCapturedPhotoUri(null);
@@ -221,6 +230,14 @@ export default function App() {
         )}
       </ScreenLayer>
 
+      <ScreenLayer visible={appState === "error"}>
+        <ErrorOverlay onRetry={resetToCamera} />
+      </ScreenLayer>
+
+      <ScreenLayer visible={appState === "unidentifiable"}>
+        <UnidentifiableOverlay onRetry={resetToCamera} />
+      </ScreenLayer>
+
       {appState === "camera" && (
         <View style={styles.buttonContainer}>
           <Pressable
@@ -230,6 +247,7 @@ export default function App() {
             ]}
             onPress={handleCapture}
             disabled={capturing}
+            testID="capture-button"
           />
         </View>
       )}

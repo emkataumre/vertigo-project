@@ -16,7 +16,7 @@ export default function ConfirmationScreen({
   return (
     <View style={styles.container}>
       <View style={styles.content}>
-        <Image source={{ uri: photoUri }} style={styles.preview} resizeMode="cover" />
+        <Image source={{ uri: photoUri }} style={styles.preview} resizeMode="cover" testID="photo-preview" />
         <Text style={styles.question}>{itemName}?</Text>
         <View style={styles.buttons}>
           <Pressable

@@ -6,8 +6,9 @@ import type { BinId } from "../constants/bins";
  * supabase/functions/identify/index.ts.
  */
 export interface IdentifyResponse {
+  item: string;
   bin_id: BinId | null;
   reason_en: string;
   reason_da: string;
-  alternative_bin_id: BinId | null;
+  alternatives: { item: string; bin_id: BinId }[];
 }
