@@ -2,6 +2,12 @@
  * @jest-environment node
  */
 import { saveScan } from "../lib/saveScan";
+import { withRetry } from "../lib/retry";
+
+// Bypass retry logic — save tests focus on save behavior, not retry behavior
+jest.mock("../lib/retry", () => ({
+  withRetry: jest.fn((fn: () => Promise<unknown>) => fn()),
+}));
 
 const mockUpload = jest.fn();
 const mockGetPublicUrl = jest.fn();
@@ -47,6 +53,7 @@ describe("saveScan", () => {
   it("uploads photo and inserts scan record on happy path", async () => {
     await saveScan("file://photo.jpg", validBase64, validResponse);
 
+    expect(jest.mocked(withRetry)).toHaveBeenCalledWith(expect.any(Function), "saveScan");
     expect(mockUpload).toHaveBeenCalledWith(
       expect.stringMatching(/^scans\/\d+-\w+\.jpg$/),
       expect.any(Uint8Array),

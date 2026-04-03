@@ -1,8 +1,9 @@
 import { supabase } from "./supabase";
+import { withRetry } from "./retry";
 
 /**
  * Fire-and-forget background save of a user correction. Never rejects.
- * All errors are caught and logged internally.
+ * Retries once after 1 second on failure. All errors are caught and logged internally.
  */
 export async function saveCorrection(
   photoUri: string,
@@ -13,33 +14,30 @@ export async function saveCorrection(
   correctedBinId: string | null
 ): Promise<void> {
   try {
-    const bytes = Uint8Array.from(atob(photoBase64), (c) => c.charCodeAt(0));
+    await withRetry(async () => {
+      const bytes = Uint8Array.from(atob(photoBase64), (c) => c.charCodeAt(0));
 
-    const path = `corrections/${Date.now()}-${Math.random().toString(36).slice(2)}.jpg`;
-    const { error: uploadError } = await supabase.storage
-      .from("photos")
-      .upload(path, bytes, { contentType: "image/jpeg" });
+      const path = `corrections/${Date.now()}-${Math.random().toString(36).slice(2)}.jpg`;
+      const { error: uploadError } = await supabase.storage
+        .from("photos")
+        .upload(path, bytes, { contentType: "image/jpeg" });
+      // Note: if upload succeeds but insert fails below, the retry will re-upload under a new path.
+      // The first file becomes orphaned in storage. Harmless — can be batch-cleaned later.
+      if (uploadError) throw uploadError;
 
-    if (uploadError) {
-      console.error("[saveCorrection] Storage upload failed:", uploadError);
-      return;
-    }
+      const { data: urlData } = supabase.storage.from("photos").getPublicUrl(path);
+      const photoUrl = urlData.publicUrl;
 
-    const { data: urlData } = supabase.storage.from("photos").getPublicUrl(path);
-    const photoUrl = urlData.publicUrl;
-
-    const { error: insertError } = await supabase.from("corrections").insert({
-      photo_url: photoUrl,
-      predicted_item: predictedItem,
-      predicted_bin_id: predictedBinId,
-      corrected_item: correctedItem,
-      corrected_bin_id: correctedBinId,
-    });
-
-    if (insertError) {
-      console.error("[saveCorrection] DB insert failed:", insertError);
-    }
+      const { error: insertError } = await supabase.from("corrections").insert({
+        photo_url: photoUrl,
+        predicted_item: predictedItem,
+        predicted_bin_id: predictedBinId,
+        corrected_item: correctedItem,
+        corrected_bin_id: correctedBinId,
+      });
+      if (insertError) throw insertError;
+    }, "saveCorrection");
   } catch (err) {
-    console.error("[saveCorrection] Unexpected error:", err);
+    console.error("[saveCorrection] Failed permanently after retries:", err);
   }
 }
