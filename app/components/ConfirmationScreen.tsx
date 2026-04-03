@@ -1,5 +1,4 @@
-import { StyleSheet, View, Text, Image, ImageBackground, Pressable } from "react-native";
-import { BlurView } from "expo-blur";
+import { StyleSheet, View, Text, Image, Pressable } from "react-native";
 
 interface ConfirmationScreenProps {
   photoUri: string;
@@ -16,36 +15,32 @@ export default function ConfirmationScreen({
 }: ConfirmationScreenProps) {
   return (
     <View style={styles.container}>
-      <ImageBackground source={{ uri: photoUri }} style={styles.background}>
-        <BlurView intensity={80} tint="dark" style={styles.blur}>
-          <View style={styles.content}>
-            <Image source={{ uri: photoUri }} style={styles.preview} />
-            <Text style={styles.question}>{itemName}?</Text>
-            <View style={styles.buttons}>
-              <Pressable
-                style={({ pressed }) => [
-                  styles.button,
-                  styles.confirmButton,
-                  pressed && styles.confirmButtonPressed,
-                ]}
-                onPress={onConfirm}
-              >
-                <Text style={styles.confirmText}>Yes</Text>
-              </Pressable>
-              <Pressable
-                style={({ pressed }) => [
-                  styles.button,
-                  styles.denyButton,
-                  pressed && styles.denyButtonPressed,
-                ]}
-                onPress={onDeny}
-              >
-                <Text style={styles.denyText}>No</Text>
-              </Pressable>
-            </View>
-          </View>
-        </BlurView>
-      </ImageBackground>
+      <View style={styles.content}>
+        <Image source={{ uri: photoUri }} style={styles.preview} resizeMode="cover" />
+        <Text style={styles.question}>{itemName}?</Text>
+        <View style={styles.buttons}>
+          <Pressable
+            style={({ pressed }) => [
+              styles.button,
+              styles.confirmButton,
+              pressed && styles.confirmButtonPressed,
+            ]}
+            onPress={onConfirm}
+          >
+            <Text style={styles.confirmText}>Yes</Text>
+          </Pressable>
+          <Pressable
+            style={({ pressed }) => [
+              styles.button,
+              styles.denyButton,
+              pressed && styles.denyButtonPressed,
+            ]}
+            onPress={onDeny}
+          >
+            <Text style={styles.denyText}>No</Text>
+          </Pressable>
+        </View>
+      </View>
     </View>
   );
 }
@@ -53,12 +48,6 @@ export default function ConfirmationScreen({
 const styles = StyleSheet.create({
   container: {
     ...StyleSheet.absoluteFillObject,
-  },
-  background: {
-    flex: 1,
-  },
-  blur: {
-    flex: 1,
     alignItems: "center",
     justifyContent: "center",
   },
