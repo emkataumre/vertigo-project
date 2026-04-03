@@ -12,6 +12,7 @@ import type { BinId } from "./constants/bins";
 import { callIdentify } from "./lib/callIdentify";
 import { saveScan } from "./lib/saveScan";
 import { saveCorrection } from "./lib/saveCorrection";
+import { compressForIdentify, compressForStorage } from "./lib/compressImage";
 
 type AppState = "camera" | "scanning" | "confirmation" | "result" | "correction" | "error" | "unidentifiable";
 
@@ -77,7 +78,8 @@ export default function App() {
       setCapturedPhotoUri(photo.uri);
       setAppState("scanning");
 
-      const response = await callIdentify(photo.base64);
+      const compressedBase64 = await compressForIdentify(photo.uri);
+      const response = await callIdentify(compressedBase64 ?? photo.base64);
       console.log("[handleCapture] Identify returned:", response.item);
 
       if (response.bin_id === null) {
@@ -106,13 +108,19 @@ export default function App() {
 
   const handleConfirm = () => {
     if (scanResult) {
-      void saveScan(scanResult.photoUri, scanResult.photoBase64, {
+      const { photoUri, photoBase64 } = scanResult;
+      const result = {
         item: scanResult.item,
         bin_id: scanResult.bin,
         reason_en: scanResult.reason,
         reason_da: scanResult.reasonDa,
         alternatives: scanResult.alternatives.map((a) => ({ item: a.item, bin_id: a.bin })),
-      });
+      };
+      void compressForStorage(photoUri)
+        .catch(() => null)
+        .then((compressed) => {
+          void saveScan(photoUri, compressed ?? photoBase64, result);
+        });
     }
     setAppState("result");
   };
@@ -123,14 +131,12 @@ export default function App() {
 
   const handleCorrection = (correctedItem: string, correctedBin: BinId | null) => {
     if (scanResult) {
-      void saveCorrection(
-        scanResult.photoUri,
-        scanResult.photoBase64,
-        scanResult.item,
-        scanResult.bin,
-        correctedItem,
-        correctedBin
-      );
+      const { photoUri, photoBase64, item, bin } = scanResult;
+      void compressForStorage(photoUri)
+        .catch(() => null)
+        .then((compressed) => {
+          void saveCorrection(photoUri, compressed ?? photoBase64, item, bin, correctedItem, correctedBin);
+        });
     }
 
     if (correctedBin) {
