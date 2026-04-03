@@ -41,6 +41,7 @@ export default function App() {
   const [capturing, setCapturing] = useState(false);
   const [appState, setAppState] = useState<AppState>("camera");
   const [scanResult, setScanResult] = useState<ScanResult | null>(null);
+  const [capturedPhotoUri, setCapturedPhotoUri] = useState<string | null>(null);
   const cameraRef = useRef<CameraView>(null);
   const scanTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
@@ -69,6 +70,7 @@ export default function App() {
     try {
       const photo = await cameraRef.current.takePictureAsync({ base64: true });
       if (photo) {
+        setCapturedPhotoUri(photo.uri);
         setAppState("scanning");
         // TODO: send photo to the identify endpoint and await the real IdentifyResponse.
         // Note: IdentifyResponse does not include `item` or `alternatives` — a decision is
@@ -138,6 +140,7 @@ export default function App() {
     if (scanTimeoutRef.current) clearTimeout(scanTimeoutRef.current);
     setAppState("camera");
     setScanResult(null);
+    setCapturedPhotoUri(null);
   };
 
   if (!permission) {
@@ -178,8 +181,8 @@ export default function App() {
         ]}
         pointerEvents={appState === "camera" ? "none" : "auto"}
       >
-        {scanResult?.photoUri && (
-          <Image source={{ uri: scanResult.photoUri }} style={styles.blurImage} />
+        {capturedPhotoUri && (
+          <Image source={{ uri: capturedPhotoUri }} style={styles.blurImage} />
         )}
         <BlurView intensity={80} tint="dark" style={styles.blurFill} />
       </View>
