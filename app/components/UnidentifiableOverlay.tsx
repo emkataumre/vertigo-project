@@ -6,7 +6,7 @@ interface UnidentifiableOverlayProps {
 
 export default function UnidentifiableOverlay({ onRetry }: UnidentifiableOverlayProps) {
   return (
-    <View style={styles.container}>
+    <View style={styles.container} testID="unidentifiable-overlay">
       <View style={styles.content}>
         <Text style={styles.title}>Couldn't identify this item</Text>
         <Text style={styles.message}>
@@ -19,6 +19,7 @@ export default function UnidentifiableOverlay({ onRetry }: UnidentifiableOverlay
           pressed && styles.retryButtonPressed,
         ]}
         onPress={onRetry}
+        testID="unidentifiable-retry-button"
       >
         <Text style={styles.retryText}>Try Again</Text>
       </Pressable>

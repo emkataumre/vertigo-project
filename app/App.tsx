@@ -11,14 +11,17 @@ import UnidentifiableOverlay from "./components/UnidentifiableOverlay";
 import type { BinId } from "./constants/bins";
 import { callIdentify } from "./lib/callIdentify";
 import { saveScan } from "./lib/saveScan";
+import { saveCorrection } from "./lib/saveCorrection";
 
 type AppState = "camera" | "scanning" | "confirmation" | "result" | "correction" | "error" | "unidentifiable";
 
 interface ScanResult {
   photoUri: string;
+  photoBase64: string;
   item: string;
   bin: BinId;
   reason: string;
+  reasonDa: string;
   alternatives: Alternative[];
 }
 
@@ -52,7 +55,7 @@ export default function App() {
       Alert.alert(
         "Permission error",
         "Could not request camera access. Please restart the app or enable it in Settings.",
-        [{ text: "Open Settings", onPress: () => Linking.openSettings().catch(() => {}) }]
+        [{ text: "Open Settings", onPress: () => Linking.openSettings().catch((error) => { console.error("Could not open settings:", error); }) }]
       );
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -64,6 +67,7 @@ export default function App() {
     try {
       const photo = await cameraRef.current.takePictureAsync({ base64: true });
       if (!photo || !photo.base64) {
+        console.error("[handleCapture] Camera returned no photo or missing base64 data");
         setAppState("error");
         return;
       }
@@ -80,15 +84,15 @@ export default function App() {
 
       const result: ScanResult = {
         photoUri: photo.uri,
+        photoBase64: photo.base64,
         item: response.item,
         bin: response.bin_id,
         reason: response.reason_en,
+        reasonDa: response.reason_da,
         alternatives: response.alternatives.map((a) => ({ item: a.item, bin: a.bin_id })),
       };
       setScanResult(result);
       setAppState("confirmation");
-
-      void saveScan(photo.uri, photo.base64, response);
     } catch (error) {
       console.error("handleCapture failed:", error);
       setAppState("error");
@@ -98,6 +102,15 @@ export default function App() {
   };
 
   const handleConfirm = () => {
+    if (scanResult) {
+      void saveScan(scanResult.photoUri, scanResult.photoBase64, {
+        item: scanResult.item,
+        bin_id: scanResult.bin,
+        reason_en: scanResult.reason,
+        reason_da: scanResult.reasonDa,
+        alternatives: scanResult.alternatives.map((a) => ({ item: a.item, bin_id: a.bin })),
+      });
+    }
     setAppState("result");
   };
 
@@ -105,15 +118,28 @@ export default function App() {
     setAppState("correction");
   };
 
-  const handleCorrection = (item: string, bin: BinId | null) => {
-    // TODO: call /correct endpoint and upload photo
-    console.log("Correction:", {
-      predicted: scanResult?.item,
-      predictedBin: scanResult?.bin,
-      correctedItem: item,
-      correctedBin: bin,
-    });
-    resetToCamera();
+  const handleCorrection = (correctedItem: string, correctedBin: BinId | null) => {
+    if (scanResult) {
+      void saveCorrection(
+        scanResult.photoUri,
+        scanResult.photoBase64,
+        scanResult.item,
+        scanResult.bin,
+        correctedItem,
+        correctedBin
+      );
+    }
+
+    if (correctedBin) {
+      setScanResult((prev) =>
+        prev
+          ? { ...prev, item: correctedItem, bin: correctedBin, reason: `You identified this as ${correctedItem}.` }
+          : null
+      );
+      setAppState("result");
+    } else {
+      resetToCamera();
+    }
   };
 
   const resetToCamera = () => {

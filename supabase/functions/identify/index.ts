@@ -101,7 +101,7 @@ Respond with a single JSON object — no markdown, no prose, no code fences. Exa
 CONSTRAINTS:
 - item MUST be a short, common English name for the item (e.g. "Coffee filter", "Plastic bottle"). If the image is unidentifiable, use "Unknown item".
 - bin_id MUST be one of the ${VALID_BIN_IDS.size} IDs listed above, or null. Any other value is a hard error.
-- alternatives MUST be an array of 0–3 objects, each with an "item" (string) and "bin_id" (one of the ${VALID_BIN_IDS.size} IDs). Only include alternatives when there is genuine ambiguity about what the item is. Use an empty array [] for clear-cut classifications.
+- alternatives MUST be an array of exactly 2–3 objects when bin_id is not null, or an empty array [] when bin_id is null (unidentifiable). Each alternative represents a plausible different item the user might be holding that belongs in a different bin — these help the user self-correct if the primary identification is wrong. Each alternative must have an "item" (string) and a "bin_id" that is DIFFERENT from the primary bin_id.
 - reason_en and reason_da must both always be present and non-empty strings.
 - Do not hallucinate bin IDs. Do not invent categories not in the list above.
 `.trim();
@@ -255,7 +255,7 @@ if (import.meta.main) Deno.serve(async (req: Request): Promise<Response> => {
   // ── Rate limiting ───────────────────────────────────────────────────────────
   const forwarded = req.headers.get("x-forwarded-for");
   const clientIp = forwarded
-    ? forwarded.split(",").map(s => s.trim()).filter(Boolean).at(0) ?? "unknown"
+    ? forwarded.split(",").map(s => s.trim()).filter(Boolean).at(-1) ?? "unknown"
     : "unknown";
   if (isRateLimited(clientIp)) {
     return new Response(
@@ -324,7 +324,7 @@ if (import.meta.main) Deno.serve(async (req: Request): Promise<Response> => {
   try {
     completion = await openai.chat.completions.create({
       model: "gpt-4o-mini",
-      max_tokens: 300,
+      max_tokens: 500,
       response_format: {
         type: "json_schema",
         json_schema: {

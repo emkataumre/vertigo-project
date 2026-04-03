@@ -31,6 +31,7 @@ export async function saveScan(
     // Insert scan record
     const { error: insertError } = await supabase.from("scans").insert({
       photo_url: photoUrl,
+      item: result.item,
       bin_id: result.bin_id,
       reason_en: result.reason_en,
       reason_da: result.reason_da,

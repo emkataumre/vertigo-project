@@ -4,12 +4,15 @@ import { useCameraPermissions } from "expo-camera";
 import App from "../App";
 import { callIdentify } from "../lib/callIdentify";
 import { saveScan } from "../lib/saveScan";
+import { saveCorrection } from "../lib/saveCorrection";
 
 jest.mock("../lib/callIdentify");
 jest.mock("../lib/saveScan");
+jest.mock("../lib/saveCorrection");
 
 const mockCallIdentify = callIdentify as jest.Mock;
 const mockSaveScan = saveScan as jest.Mock;
+const mockSaveCorrection = saveCorrection as jest.Mock;
 const mockUseCameraPermissions = useCameraPermissions as jest.Mock;
 
 // Camera ref mock — returned by useRef, used to call takePictureAsync
@@ -44,6 +47,7 @@ const validPhoto = { uri: "file://photo.jpg", base64: "validbase64string" };
 beforeEach(() => {
   jest.clearAllMocks();
   mockSaveScan.mockResolvedValue(undefined);
+  mockSaveCorrection.mockResolvedValue(undefined);
   mockTakePictureAsync.mockResolvedValue(validPhoto);
   mockUseCameraPermissions.mockReturnValue([
     { granted: true },
@@ -54,8 +58,6 @@ beforeEach(() => {
 describe("App", () => {
   it("renders capture button when permission is granted", () => {
     render(<App />);
-    // Capture button is a Pressable with no text — identified by testID via style
-    // Verify scanning/error overlays are not the active screen
     expect(screen.queryByText("Something went wrong")).toBeNull();
     expect(screen.queryByText("Identifying")).toBeNull();
   });
@@ -74,28 +76,32 @@ describe("App", () => {
     mockCallIdentify.mockResolvedValue(validResponse);
     render(<App />);
 
-    // Trigger capture
     const captureButton = screen.getByTestId("capture-button");
     await act(async () => {
       fireEvent.press(captureButton);
     });
 
-    // Confirmation screen appears with item name
+    // Confirmation screen appears — saveScan NOT called yet
     await waitFor(() => {
       expect(screen.getByText("Coffee filter?")).toBeTruthy();
     });
+    expect(mockSaveScan).not.toHaveBeenCalled();
 
-    // saveScan was called with correct args
-    expect(mockSaveScan).toHaveBeenCalledWith(
-      validPhoto.uri,
-      validPhoto.base64,
-      validResponse
-    );
-
-    // Confirm → result screen
+    // Confirm → saveScan called, result screen shown
     await act(async () => {
       fireEvent.press(screen.getByText("Yes"));
     });
+    expect(mockSaveScan).toHaveBeenCalledTimes(1);
+    expect(mockSaveScan).toHaveBeenCalledWith(
+      validPhoto.uri,
+      validPhoto.base64,
+      expect.objectContaining({
+        item: "Coffee filter",
+        bin_id: "madaffald",
+        reason_en: "Used coffee filters are organic waste.",
+      })
+    );
+
     expect(screen.getByText("Food Waste")).toBeTruthy();
     expect(screen.getByText("Coffee filter")).toBeTruthy();
     expect(screen.getByText("Used coffee filters are organic waste.")).toBeTruthy();
@@ -119,6 +125,8 @@ describe("App", () => {
       expect(screen.getByText("Couldn't identify this item")).toBeTruthy();
     });
 
+    expect(mockSaveScan).not.toHaveBeenCalled();
+
     await act(async () => {
       fireEvent.press(screen.getByText("Try Again"));
     });
@@ -136,6 +144,8 @@ describe("App", () => {
     await waitFor(() => {
       expect(screen.getByText("Something went wrong")).toBeTruthy();
     });
+
+    expect(mockSaveScan).not.toHaveBeenCalled();
 
     await act(async () => {
       fireEvent.press(screen.getByText("Try Again"));
@@ -163,7 +173,7 @@ describe("App", () => {
     expect(screen.getByText("Coffee bag (plastic)")).toBeTruthy();
   });
 
-  it("selecting a correction resets to camera", async () => {
+  it("selecting an alternative saves correction and shows result", async () => {
     mockCallIdentify.mockResolvedValue(validResponse);
     render(<App />);
 
@@ -177,7 +187,22 @@ describe("App", () => {
       fireEvent.press(screen.getByText("Coffee bag (plastic)"));
     });
 
-    expect(screen.queryByText("What is it?")).toBeNull();
+    // saveCorrection called with predicted + corrected data
+    expect(mockSaveCorrection).toHaveBeenCalledWith(
+      validPhoto.uri,
+      validPhoto.base64,
+      "Coffee filter",
+      "madaffald",
+      "Coffee bag (plastic)",
+      "restaffald"
+    );
+
+    // Shows result screen with corrected item's bin
+    expect(screen.getByText("Residual Waste")).toBeTruthy();
+    expect(screen.getByText("Coffee bag (plastic)")).toBeTruthy();
+
+    // saveScan was NOT called (only corrections saved)
+    expect(mockSaveScan).not.toHaveBeenCalled();
   });
 
   it("empty base64 guard: does not call callIdentify, shows error", async () => {

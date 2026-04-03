@@ -6,11 +6,11 @@ interface ErrorOverlayProps {
 
 export default function ErrorOverlay({ onRetry }: ErrorOverlayProps) {
   return (
-    <View style={styles.container}>
+    <View style={styles.container} testID="error-overlay">
       <View style={styles.content}>
         <Text style={styles.title}>Something went wrong</Text>
         <Text style={styles.message}>
-          Couldn't reach the server. Please try again.
+          Please try again.
         </Text>
       </View>
       <Pressable
@@ -19,6 +19,7 @@ export default function ErrorOverlay({ onRetry }: ErrorOverlayProps) {
           pressed && styles.retryButtonPressed,
         ]}
         onPress={onRetry}
+        testID="error-retry-button"
       >
         <Text style={styles.retryText}>Try Again</Text>
       </Pressable>

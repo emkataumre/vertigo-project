@@ -47,10 +47,15 @@ describe("saveScan", () => {
   it("uploads photo and inserts scan record on happy path", async () => {
     await saveScan("file://photo.jpg", validBase64, validResponse);
 
-    expect(mockUpload).toHaveBeenCalledTimes(1);
+    expect(mockUpload).toHaveBeenCalledWith(
+      expect.stringMatching(/^scans\/\d+-\w+\.jpg$/),
+      expect.any(Uint8Array),
+      { contentType: "image/jpeg" }
+    );
     expect(mockInsert).toHaveBeenCalledWith(
       expect.objectContaining({
         photo_url: "https://test.co/photo.jpg",
+        item: "Coffee filter",
         bin_id: "madaffald",
         reason_en: validResponse.reason_en,
         reason_da: validResponse.reason_da,
