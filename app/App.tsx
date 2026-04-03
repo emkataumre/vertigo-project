@@ -3,11 +3,22 @@ import { StyleSheet, Text, View, Pressable, Alert } from "react-native";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import { StatusBar } from "expo-status-bar";
 import ScanningOverlay from "./components/ScanningOverlay";
+import ConfirmationScreen from "./components/ConfirmationScreen";
+
+type AppState = "camera" | "scanning" | "confirmation";
+
+interface ScanResult {
+  photoUri: string;
+  item: string;
+  bin: string;
+  reason: string;
+}
 
 export default function App() {
   const [permission, requestPermission] = useCameraPermissions();
   const [capturing, setCapturing] = useState(false);
-  const [scanning, setScanning] = useState(false);
+  const [appState, setAppState] = useState<AppState>("camera");
+  const [scanResult, setScanResult] = useState<ScanResult | null>(null);
   const cameraRef = useRef<CameraView>(null);
 
   useEffect(() => {
@@ -22,11 +33,17 @@ export default function App() {
     try {
       const photo = await cameraRef.current.takePictureAsync({ base64: true });
       if (photo) {
-        setScanning(true);
+        setAppState("scanning");
         // TODO: send to identify endpoint — for now simulate with timeout
         console.log("Photo captured:", photo.uri);
         setTimeout(() => {
-          setScanning(false);
+          setScanResult({
+            photoUri: photo.uri,
+            item: "Coffee filter",
+            bin: "madaffald",
+            reason: "Used coffee filters are organic waste and go in the green bio bag.",
+          });
+          setAppState("confirmation");
         }, 2000);
       }
     } catch {
@@ -34,6 +51,23 @@ export default function App() {
     } finally {
       setCapturing(false);
     }
+  };
+
+  const handleConfirm = () => {
+    // TODO: navigate to result screen
+    console.log("Confirmed:", scanResult?.item);
+    resetToCamera();
+  };
+
+  const handleDeny = () => {
+    // TODO: navigate to correction flow
+    console.log("Denied:", scanResult?.item);
+    resetToCamera();
+  };
+
+  const resetToCamera = () => {
+    setAppState("camera");
+    setScanResult(null);
   };
 
   if (!permission) {
@@ -51,8 +85,16 @@ export default function App() {
   return (
     <View style={styles.container}>
       <CameraView style={styles.camera} ref={cameraRef} facing="back" />
-      {scanning && <ScanningOverlay />}
-      {!scanning && (
+      {appState === "scanning" && <ScanningOverlay />}
+      {appState === "confirmation" && scanResult && (
+        <ConfirmationScreen
+          photoUri={scanResult.photoUri}
+          itemName={scanResult.item}
+          onConfirm={handleConfirm}
+          onDeny={handleDeny}
+        />
+      )}
+      {appState === "camera" && (
         <View style={styles.buttonContainer}>
           <Pressable
             style={({ pressed }) => [
