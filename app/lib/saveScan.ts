@@ -1,17 +1,18 @@
-import * as FileSystem from "expo-file-system/legacy";
 import { supabase } from "./supabase";
 import type { IdentifyResponse } from "../types/identify";
 
+/**
+ * Fire-and-forget background save. Never rejects.
+ * All errors are caught and logged internally.
+ */
 export async function saveScan(
   photoUri: string,
+  photoBase64: string,
   result: IdentifyResponse
 ): Promise<void> {
   try {
-    // Read photo as base64 and convert to Uint8Array for upload
-    const base64 = await FileSystem.readAsStringAsync(photoUri, {
-      encoding: "base64",
-    });
-    const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
+    // Convert base64 captured by the camera to bytes for upload
+    const bytes = Uint8Array.from(atob(photoBase64), (c) => c.charCodeAt(0));
 
     // Upload to photos bucket
     const path = `scans/${Date.now()}-${Math.random().toString(36).slice(2)}.jpg`;
