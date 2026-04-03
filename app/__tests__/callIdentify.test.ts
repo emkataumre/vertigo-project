@@ -34,6 +34,7 @@ describe("callIdentify", () => {
     expect(result).toEqual(validResponse);
     expect(mockInvoke).toHaveBeenCalledWith("identify", {
       body: { image_base64: "base64string" },
+      signal: expect.any(AbortSignal),
     });
   });
 

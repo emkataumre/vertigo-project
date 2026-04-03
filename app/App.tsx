@@ -65,6 +65,7 @@ export default function App() {
     if (!cameraRef.current || capturing) return;
     setCapturing(true);
     try {
+      console.log("[handleCapture] Taking picture...");
       const photo = await cameraRef.current.takePictureAsync({ base64: true });
       if (!photo || !photo.base64) {
         console.error("[handleCapture] Camera returned no photo or missing base64 data");
@@ -72,10 +73,12 @@ export default function App() {
         return;
       }
 
+      console.log("[handleCapture] Photo captured, calling identify...");
       setCapturedPhotoUri(photo.uri);
       setAppState("scanning");
 
       const response = await callIdentify(photo.base64);
+      console.log("[handleCapture] Identify returned:", response.item);
 
       if (response.bin_id === null) {
         setAppState("unidentifiable");
