@@ -34,6 +34,8 @@ interface ScreenLayerProps {
   children: ReactNode;
 }
 
+const LOW_LIGHT_LUX = 50;
+
 function ScreenLayer({ visible, children }: ScreenLayerProps): ReactNode {
   return (
     <View
@@ -69,14 +71,19 @@ export default function App() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const LOW_LIGHT_LUX = 50;
-
   useEffect(() => {
     if (Platform.OS !== "android" || appState !== "camera") return;
-    const sub = LightSensor.addListener(({ illuminance }) => {
-      setIsLowLight(illuminance < LOW_LIGHT_LUX);
-    });
-    return () => sub.remove();
+    let sub: { remove: () => void } | null = null;
+    try {
+      sub = LightSensor.addListener(({ illuminance }) => {
+        setIsLowLight(illuminance < LOW_LIGHT_LUX);
+      });
+    } catch (error) {
+      // Sensor unavailable on this device — glow hint disabled, torch still works.
+      console.warn("[LightSensor] Sensor unavailable:", error);
+      setIsLowLight(false);
+    }
+    return () => { sub?.remove(); setIsLowLight(false); };
   }, [appState]);
 
   useEffect(() => {
@@ -245,7 +252,7 @@ export default function App() {
         ref={cameraRef}
         facing="back"
         selectedLens="builtInWideAngleCamera"
-        enableTorch={torchEnabled}
+        enableTorch={torchEnabled && appState === "camera"}
       />
 
       <View
