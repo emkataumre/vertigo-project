@@ -17,6 +17,21 @@ jest.mock("../lib/compressImage", () => ({
   compressForStorage: jest.fn().mockResolvedValue(null),
 }));
 
+const mockLightSensorRemove = jest.fn();
+jest.mock("expo-sensors", () => ({
+  LightSensor: {
+    addListener: jest.fn(() => ({ remove: mockLightSensorRemove })),
+  },
+}));
+
+jest.mock("@expo/vector-icons", () => {
+  const mockReact = require("react");
+  return {
+    Ionicons: ({ name }: { name: string }) =>
+      mockReact.createElement("View", { testID: `icon-${name}` }),
+  };
+});
+
 const mockCallIdentify = callIdentify as jest.Mock;
 const mockCallClassifyText = callClassifyText as jest.Mock;
 const mockSaveScan = saveScan as jest.Mock;
@@ -56,6 +71,7 @@ const validPhoto = { uri: "file://photo.jpg", base64: "validbase64string" };
 
 beforeEach(() => {
   jest.clearAllMocks();
+  mockLightSensorRemove.mockReset();
   mockSaveScan.mockResolvedValue(undefined);
   mockSaveCorrection.mockResolvedValue(undefined);
   mockCallClassifyText.mockResolvedValue(null);
@@ -390,6 +406,64 @@ describe("App", () => {
       );
     });
     expect(screen.queryByText("Food Waste")).toBeNull();
+  });
+
+  it("torch button is visible on camera screen with flash-off icon", () => {
+    render(<App />);
+    expect(screen.getByTestId("torch-button")).toBeTruthy();
+    expect(screen.getByTestId("icon-flash-off")).toBeTruthy();
+  });
+
+  it("torch button toggles flash icon on each press", async () => {
+    render(<App />);
+    expect(screen.getByTestId("icon-flash-off")).toBeTruthy();
+
+    await act(async () => { fireEvent.press(screen.getByTestId("torch-button")); });
+    expect(screen.getByTestId("icon-flash")).toBeTruthy();
+
+    await act(async () => { fireEvent.press(screen.getByTestId("torch-button")); });
+    expect(screen.getByTestId("icon-flash-off")).toBeTruthy();
+  });
+
+  it("torch resets to off when returning to camera after error", async () => {
+    mockCallIdentify.mockRejectedValue(new Error("fail"));
+    render(<App />);
+
+    // Enable torch first so reset is meaningful
+    await act(async () => { fireEvent.press(screen.getByTestId("torch-button")); });
+    expect(screen.getByTestId("icon-flash")).toBeTruthy();
+
+    // Trigger capture → error (torch button hides during scan)
+    await act(async () => {
+      fireEvent.press(screen.getByTestId("capture-button"));
+    });
+    await waitFor(() => expect(screen.getByText("Something went wrong")).toBeTruthy());
+
+    // Return to camera — torch must be reset off
+    await act(async () => {
+      fireEvent.press(screen.getByText("Try Again"));
+    });
+    expect(screen.getByTestId("icon-flash-off")).toBeTruthy();
+  });
+
+  it("torch button is not visible when not in camera state", async () => {
+    mockCallIdentify.mockRejectedValue(new Error("fail"));
+    render(<App />);
+
+    await act(async () => {
+      fireEvent.press(screen.getByTestId("capture-button"));
+    });
+    await waitFor(() => expect(screen.getByText("Something went wrong")).toBeTruthy());
+
+    expect(screen.queryByTestId("torch-button")).toBeNull();
+  });
+
+  it("LightSensor is not subscribed on non-Android platforms (iOS guard)", () => {
+    // Jest runs with Platform.OS = 'ios' by default.
+    // The LightSensor subscription is Android-only — verify the guard prevents subscription.
+    const { LightSensor } = require("expo-sensors");
+    render(<App />);
+    expect(LightSensor.addListener).not.toHaveBeenCalled();
   });
 
   it("result screen is shown immediately — UI does not wait for saveCorrection to complete", async () => {
