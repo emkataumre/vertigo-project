@@ -1,7 +1,9 @@
 import { type ReactNode, useEffect, useRef, useState } from "react";
-import { StyleSheet, Text, View, Image, Pressable, Alert, Linking } from "react-native";
+import { Animated, Platform, StyleSheet, Text, View, Image, Pressable, Alert, Linking } from "react-native";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import { StatusBar } from "expo-status-bar";
+import { LightSensor } from "expo-sensors";
+import { Ionicons } from "@expo/vector-icons";
 import ScanningOverlay from "./components/ScanningOverlay";
 import ConfirmationScreen from "./components/ConfirmationScreen";
 import ResultScreen from "./components/ResultScreen";
@@ -51,6 +53,9 @@ export default function App() {
   const [scanResult, setScanResult] = useState<ScanResult | null>(null);
   const [capturedPhotoUri, setCapturedPhotoUri] = useState<string | null>(null);
   const cameraRef = useRef<CameraView>(null);
+  const [torchEnabled, setTorchEnabled] = useState(false);
+  const [isLowLight, setIsLowLight] = useState(false);
+  const glowAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     requestPermission().catch((error) => {
@@ -63,6 +68,30 @@ export default function App() {
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const LOW_LIGHT_LUX = 50;
+
+  useEffect(() => {
+    if (Platform.OS !== "android" || appState !== "camera") return;
+    const sub = LightSensor.addListener(({ illuminance }) => {
+      setIsLowLight(illuminance < LOW_LIGHT_LUX);
+    });
+    return () => sub.remove();
+  }, [appState]);
+
+  useEffect(() => {
+    if (isLowLight && !torchEnabled) {
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(glowAnim, { toValue: 0.35, duration: 750, useNativeDriver: true }),
+          Animated.timing(glowAnim, { toValue: 0, duration: 750, useNativeDriver: true }),
+        ])
+      ).start();
+    } else {
+      glowAnim.stopAnimation();
+      glowAnim.setValue(0);
+    }
+  }, [isLowLight, torchEnabled, glowAnim]);
 
   const handleCapture = async () => {
     if (!cameraRef.current || capturing) return;
@@ -179,6 +208,7 @@ export default function App() {
     setScanResult(null);
     setCapturedPhotoUri(null);
     setErrorTitle("Something went wrong");
+    setTorchEnabled(false);
   };
 
   if (!permission) {
@@ -210,7 +240,13 @@ export default function App() {
 
   return (
     <View style={styles.container}>
-      <CameraView style={styles.camera} ref={cameraRef} facing="back" />
+      <CameraView
+        style={styles.camera}
+        ref={cameraRef}
+        facing="back"
+        selectedLens="builtInWideAngleCamera"
+        enableTorch={torchEnabled}
+      />
 
       <View
         style={[
@@ -270,17 +306,29 @@ export default function App() {
       </ScreenLayer>
 
       {appState === "camera" && (
-        <View style={styles.buttonContainer}>
+        <>
+          <View style={styles.buttonContainer}>
+            <Pressable
+              style={({ pressed }) => [
+                styles.captureButton,
+                pressed && styles.captureButtonPressed,
+              ]}
+              onPress={handleCapture}
+              disabled={capturing}
+              testID="capture-button"
+            />
+          </View>
           <Pressable
-            style={({ pressed }) => [
-              styles.captureButton,
-              pressed && styles.captureButtonPressed,
-            ]}
-            onPress={handleCapture}
-            disabled={capturing}
-            testID="capture-button"
-          />
-        </View>
+            style={styles.torchButton}
+            onPress={() => setTorchEnabled((prev) => !prev)}
+            testID="torch-button"
+          >
+            {isLowLight && !torchEnabled && Platform.OS === "android" && (
+              <Animated.View style={[styles.torchGlow, { opacity: glowAnim }]} />
+            )}
+            <Ionicons name={torchEnabled ? "flash" : "flash-off"} size={26} color="#fff" />
+          </Pressable>
+        </>
       )}
       <StatusBar style="light" />
     </View>
@@ -341,5 +389,21 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontSize: 16,
     fontWeight: "600",
+  },
+  torchButton: {
+    position: "absolute",
+    bottom: 47,
+    left: 30,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: "rgba(0, 0, 0, 0.45)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  torchGlow: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: 22,
+    backgroundColor: "#FFC107",
   },
 });

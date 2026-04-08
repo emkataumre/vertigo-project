@@ -10,10 +10,12 @@
     "test": "jest"
   },
   "dependencies": {
+    "@expo/vector-icons": "^15.0.3",
     "@supabase/supabase-js": "^2.101.1",
     "expo": "~54.0.33",
     "expo-camera": "~17.0.10",
     "expo-image-manipulator": "~14.0.8",
+    "expo-sensors": "~15.0.8",
     "expo-status-bar": "~3.0.9",
     "react": "19.1.0",
     "react-native": "0.81.5"
